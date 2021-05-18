@@ -1,2 +1,4 @@
 proc-trace
 *.o
+*.bin
+*.ini
