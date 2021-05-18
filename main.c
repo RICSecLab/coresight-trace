@@ -50,6 +50,7 @@ int main(int argc, char *argv[])
 {
   if (argc < 2) {
     fprintf(stderr, "Usage: %s EXE\n", argv[0]);
+    exit(EXIT_SUCCESS);
   }
 
   pid_t pid;
