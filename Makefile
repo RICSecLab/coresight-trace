@@ -18,10 +18,13 @@ SRCS:=$(wildcard *.c)
 OBJS:=$(SRCS:.c=.o)
 TARGET:=proc-trace
 
+TEST=/bin/ls
+TEST_ARG="/"
+
 all: $(TARGET)
 
 run: $(TARGET)
-	./$(TARGET) /bin/ls /
+	sudo ./$(TARGET) $(TEST) $(TEST_ARG)
 
 $(TARGET): $(OBJS) $(CSKNOWNBOARDS) $(LIBCSACCESS) $(LIBCSACCUTIL)
 	$(CC) -o $@ $^
