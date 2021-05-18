@@ -416,21 +416,25 @@ void parent(pid_t pid)
 {
   int wstatus;
   bool is_first_exec;
+  bool trace_started;
 
   is_first_exec = true;
+  trace_started = false;
 
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     if (is_first_exec == true) {
       is_first_exec = false;
       start_trace(pid);
+      trace_started = true;
     }
   }
   ptrace(PTRACE_CONT, pid, 0, 0);
 
   waitpid(pid, &wstatus, 0);
-  if (WIFEXITED(wstatus)) {
+  if (WIFEXITED(wstatus) && trace_started == true) {
     exit_trace(pid);
+    trace_started = false;
   }
 }
 
