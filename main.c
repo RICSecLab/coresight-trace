@@ -17,7 +17,7 @@
 
 #define TRACE_CPU 1
 
-const char *board_name = "Jetson TX2";
+const char *board_name = "Marvell ThunderX2";
 const bool full = true;
 const bool itm_only = false;
 const bool itm = false;
