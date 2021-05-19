@@ -41,7 +41,7 @@ $(TARGET): $(OBJS) $(CSKNOWNBOARDS) $(LIBCSACCESS) $(LIBCSACCUTIL)
 	$(CC) -o $@ $^
 
 $(CSD_DECODER):
-	$(MAKE) -C decoder/build/linux -f makefile.dev
+	$(MAKE) -C $(CSD_BASE)/decoder/build/linux -f makefile.dev
 
 $(CSKNOWNBOARDS):
 	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) DEBUG=1 # TODO
