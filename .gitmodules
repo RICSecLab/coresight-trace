@@ -1,0 +1,6 @@
+[submodule "CSAL"]
+	path = CSAL
+	url = git@github.com:RICSecLab/CSAL-ThunderX2.git
+[submodule "OpenCSD"]
+	path = OpenCSD
+	url = git@github.com:RICSecLab/OpenCSD-ThunderX2.git
