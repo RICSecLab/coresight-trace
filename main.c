@@ -1,8 +1,10 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sched.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -12,6 +14,8 @@
 #include "csregisters.h"
 #include "cs_util_create_snapshot.h"
 #include "cs_demo_known_boards.h"
+
+#define TRACE_CPU 1
 
 const char *board_name = "Jetson TX2";
 const bool full = true;
@@ -24,6 +28,9 @@ const bool return_stack = false;
 
 static struct cs_devices_t devices;
 const struct board *board;
+
+static int cpu = TRACE_CPU;
+static cpu_set_t affinity_mask;
 
 static void show_etm_config(unsigned int n)
 {
@@ -301,6 +308,10 @@ static int do_configure_trace(const struct board *board)
     }
 
     for (i = 0; i < board->n_cpu; ++i) {
+        if (cpu >= 0 && i != cpu) {
+          printf("Skipping Trace enabling for CPU #%d\n", i);
+          continue;
+        }
         if (trace_timestamps)
             cs_trace_enable_timestamps(devices.ptm[i], 1);
         if (trace_cycle_accurate)
@@ -360,6 +371,17 @@ static void start_trace(pid_t pid)
     return;
   }
 
+  if (cpu >= 0) {
+    printf("Set CPU affinity: CPU #%d\n", cpu);
+    CPU_ZERO(&affinity_mask);
+    CPU_SET(cpu, &affinity_mask);
+    if (sched_setaffinity(pid, sizeof(affinity_mask), &affinity_mask) < 0) {
+      perror("sched_setaffinity");
+      cs_shutdown();
+      return;
+    }
+  }
+
   if (do_configure_trace(board) < 0) {
     fprintf(stderr, "do_configure_trace() failed\n");
     return;
@@ -386,6 +408,10 @@ static void exit_trace(pid_t pid)
 
   printf("CSDEMO: Disable trace...\n");
   for (i = 0; i < board->n_cpu; ++i) {
+    if (cpu >= 0 && i != cpu) {
+      printf("Skipping Trace disabling for CPU #%d\n", i);
+      continue;
+    }
     cs_trace_disable(devices.ptm[i]);
   }
   cs_sink_disable(devices.etb);
