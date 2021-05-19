@@ -11,7 +11,7 @@ def main():
     if len(sys.argv) < 2:
         print('Usage: {} LIST'.format(sys.argv[0]))
         return -1
-    
+
     count = [0 for i in range(ID_OFFSET, ID_MAX+1)]
     with open(sys.argv[1], 'r') as fp:
         for line in fp:
