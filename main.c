@@ -2,9 +2,11 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <unistd.h>
 #include <sched.h>
+#include <limits.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -16,21 +18,33 @@
 #include "cs_demo_known_boards.h"
 
 #define TRACE_CPU 1
+#define SYS_MEM_START 0xffff00000000UL
 
 const char *board_name = "Marvell ThunderX2";
-const bool full = true;
 const bool itm_only = false;
 const bool itm = false;
 const bool trace_timestamps = false;
-const bool trace_cycle_accurate = false;
-const bool etb_stop_on_flush = false;
-const bool return_stack = false;
+const bool trace_cycle_accurate = true;
+const bool etb_stop_on_flush = true;
+const bool return_stack = true;
+
+static bool full = true;
 
 static struct cs_devices_t devices;
 const struct board *board;
 
+#define INVALID_ADDRESS 1
+static unsigned long o_trace_start_address = INVALID_ADDRESS;
+static unsigned long o_trace_end_address = INVALID_ADDRESS;
+
 static int cpu = TRACE_CPU;
 static cpu_set_t affinity_mask;
+
+struct addr_range {
+    unsigned long start;
+    unsigned long end;
+} addr_range_cmps[ETMv4_NUM_ADDR_COMP_MAX / 2];
+static int addr_range_count = 0;
 
 static void show_etm_config(unsigned int n)
 {
@@ -146,8 +160,8 @@ static int do_config_etmv4(int n_core)
     if (return_stack)
         tconfig.configr.bits.rs = 1; /* set the return stack */
     
-#if 0
     if (!full) {
+#if 0
         /*  set up an address range filter - use comparator pair and the view-inst registers */
 
         tconfig.addr_comps[0].acvr_l = o_trace_start_address & 0xFFFFFFFF;
@@ -165,10 +179,27 @@ static int do_config_etmv4(int n_core)
 
         /* finally, set up ViewInst to trace according to the resources we have set up */
         tconfig.viiectlr = 0x1;	/* program the address comp pair 0 for include */
-        tconfig.syncpr = 0x0;	/* no extra sync */
-
-    }
+        tconfig.syncpr = 0x14;	/* 4096 bytes per sync */
 #endif
+        for (int i = 0; i < addr_range_count; i++) {
+            /*  set up an address range filter - use comparator pair and the view-inst registers */
+            tconfig.addr_comps[i].acvr_l = addr_range_cmps[i].start & 0xFFFFFFFF;
+            tconfig.addr_comps[i].acvr_h =
+                (addr_range_cmps[i].start >> 32) & 0xFFFFFFFF;
+            tconfig.addr_comps[i].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
+            tconfig.addr_comps[i + 1].acvr_l = addr_range_cmps[i].end & 0xFFFFFFFF;
+            tconfig.addr_comps[i + 1].acvr_h =
+                (addr_range_cmps[i].end >> 32) & 0xFFFFFFFF;
+            tconfig.addr_comps[i + 1].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
+            tconfig.addr_comps_acc_mask |= (1 << (i + 1)) | (1 << i);
+            /* finally, set up ViewInst to trace according to the resources we have set up */
+            tconfig.viiectlr |= 1 << i;	/* program the address comp pair 0 for include */
+        }
+
+        /* mark the config structure to program the above registers on 'put' */
+        tconfig.flags |= CS_ETMC_ADDR_COMP;
+        tconfig.syncpr = 0x14;	/* 4096 bytes per sync */
+    }
     cs_etm_config_print_ex(etm, &tconfig);
     cs_etm_config_put_ex(etm, &tconfig);
 
@@ -308,10 +339,12 @@ static int do_configure_trace(const struct board *board)
     }
 
     for (i = 0; i < board->n_cpu; ++i) {
+#if 0
         if (cpu >= 0 && i != cpu) {
           printf("Skipping Trace enabling for CPU #%d\n", i);
           continue;
         }
+#endif
         if (trace_timestamps)
             cs_trace_enable_timestamps(devices.ptm[i], 1);
         if (trace_cycle_accurate)
@@ -358,8 +391,118 @@ static int do_configure_trace(const struct board *board)
     return 0;
 }
 
+#if 0
+static int get_mem_range(pid_t pid, unsigned long *start, unsigned long *end)
+{
+  FILE *fp;
+  char maps_path[PATH_MAX];
+  char *line;
+  size_t n;
+  ssize_t readn;
+  unsigned long start_addr;
+  unsigned long end_addr;
+  char c;
+  char x;
+
+  memset(maps_path, 0, sizeof(maps_path));
+  snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
+
+  fp = fopen(maps_path, "r");
+  if (fp == NULL) {
+    perror("fopen");
+    return -1;
+  }
+
+  line = NULL;
+  n = 0;
+  readn = 0;
+  while ((readn = getline(&line, &n, fp)) != -1) {
+    sscanf(line, "%lx-%lx %c%c%c", &start_addr, &end_addr, &c, &c, &x);
+    if (x == 'x' && end_addr < SYS_MEM_START) {
+      *start = start_addr;
+      *end = end_addr;
+      if (line != NULL) {
+        free(line);
+      }
+      return 0;
+    }
+  }
+
+  if (line != NULL) {
+    free(line);
+  }
+  // No user executable memory region found
+  return -1;
+}
+#endif
+
+static int get_mem_range(pid_t pid)
+{
+  FILE *fp;
+  char maps_path[PATH_MAX];
+  char *line;
+  size_t n;
+  ssize_t readn;
+  unsigned long start_addr;
+  unsigned long end_addr;
+  char c;
+  char x;
+  int count;
+
+  memset(maps_path, 0, sizeof(maps_path));
+  snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
+
+  fp = fopen(maps_path, "r");
+  if (fp == NULL) {
+    perror("fopen");
+    return -1;
+  }
+
+  line = NULL;
+  n = 0;
+  readn = 0;
+  count = 0;
+  while ((readn = getline(&line, &n, fp)) != -1) {
+    sscanf(line, "%lx-%lx %c%c%c", &start_addr, &end_addr, &c, &c, &x);
+    if (x == 'x') {
+      if (count < ETMv4_NUM_ADDR_COMP_MAX / 2) {
+        addr_range_cmps[count].start = start_addr;
+        addr_range_cmps[count].end = end_addr;
+      } else {
+        fprintf(stderr, "** WARNING: address range [0x%lx-0x%lx] will not trace\n", start_addr, end_addr);
+      }
+      count += 1;
+    }
+  }
+
+  if (line != NULL) {
+    free(line);
+  }
+  addr_range_count = count;
+  return count;
+}
+
 static void start_trace(pid_t pid)
 {
+#if 0
+  if (get_mem_range(pid, &o_trace_start_address, &o_trace_end_address) < 0) {
+    fprintf(stderr, "get_mem_range() failed\n");
+    return;
+  }
+#endif
+  if (get_mem_range(pid) < 0) {
+    fprintf(stderr, "get_mem_range() failed\n");
+    return;
+  }
+
+  // Use address range filter
+  full = false;
+  //printf("Trace [0x%lx-0x%lx]\n", o_trace_start_address, o_trace_end_address);
+
+  for (int i = 0; i < addr_range_count; i++) {
+    printf("Trace [0x%lx-0x%lx]\n", addr_range_cmps[i].start, addr_range_cmps[i].end);
+  }
+
   // TODO: Use our own board setup
   if (setup_known_board_by_name(board_name, &board, &devices) < 0) {
     fprintf(stderr, "setup_known_board_by_name() failed\n");
@@ -408,10 +551,12 @@ static void exit_trace(pid_t pid)
 
   printf("CSDEMO: Disable trace...\n");
   for (i = 0; i < board->n_cpu; ++i) {
+#if 0
     if (cpu >= 0 && i != cpu) {
       printf("Skipping Trace disabling for CPU #%d\n", i);
       continue;
     }
+#endif
     cs_trace_disable(devices.ptm[i]);
   }
   cs_sink_disable(devices.etb);
@@ -430,6 +575,11 @@ static void exit_trace(pid_t pid)
 
   printf("CSDEMO: shutdown...\n");
   cs_shutdown();
+
+  //printf("Traced [0x%lx-0x%lx]\n", o_trace_start_address, o_trace_end_address);
+  for (int i = 0; i < addr_range_count; i++) {
+    printf("Traced [0x%lx-0x%lx]\n", addr_range_cmps[i].start, addr_range_cmps[i].end);
+  }
 }
 
 void child(char *argv[])
