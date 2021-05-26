@@ -184,15 +184,15 @@ static int do_config_etmv4(int n_core)
 #endif
         for (int i = 0; i < addr_range_count; i++) {
             /*  set up an address range filter - use comparator pair and the view-inst registers */
-            tconfig.addr_comps[i].acvr_l = addr_range_cmps[i].start & 0xFFFFFFFF;
-            tconfig.addr_comps[i].acvr_h =
+            tconfig.addr_comps[i * 2].acvr_l = addr_range_cmps[i].start & 0xFFFFFFFF;
+            tconfig.addr_comps[i * 2].acvr_h =
                 (addr_range_cmps[i].start >> 32) & 0xFFFFFFFF;
-            tconfig.addr_comps[i].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
-            tconfig.addr_comps[i + 1].acvr_l = addr_range_cmps[i].end & 0xFFFFFFFF;
-            tconfig.addr_comps[i + 1].acvr_h =
+            tconfig.addr_comps[i * 2].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
+            tconfig.addr_comps[i * 2 + 1].acvr_l = addr_range_cmps[i].end & 0xFFFFFFFF;
+            tconfig.addr_comps[i * 2 + 1].acvr_h =
                 (addr_range_cmps[i].end >> 32) & 0xFFFFFFFF;
-            tconfig.addr_comps[i + 1].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
-            tconfig.addr_comps_acc_mask |= (1 << (i + 1)) | (1 << i);
+            tconfig.addr_comps[i * 2 + 1].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
+            tconfig.addr_comps_acc_mask |= (1 << (i * 2 + 1)) | (1 << (i * 2));
             /* finally, set up ViewInst to trace according to the resources we have set up */
             tconfig.viiectlr |= 1 << i;	/* program the address comp pair 0 for include */
         }
