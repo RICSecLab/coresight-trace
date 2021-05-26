@@ -23,8 +23,9 @@ SRCS:=$(wildcard *.c)
 OBJS:=$(SRCS:.c=.o)
 TARGET:=proc-trace
 
-TEST?=/bin/ls
-TEST_ARG?="/"
+TESTS:= \
+  tests/fib \
+  tests/loop \
 
 all: $(TARGET)
 
@@ -55,6 +56,6 @@ $(LIBCSACCUTIL):
 	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) DEBUG=1 # TODO
 
 clean:
-	rm -f *.o $(TARGET)
+	rm -f *.o $(TARGET) $(TESTS)
 
 .PHONY: all run clean
