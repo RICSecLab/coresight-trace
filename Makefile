@@ -23,8 +23,8 @@ SRCS:=$(wildcard *.c)
 OBJS:=$(SRCS:.c=.o)
 TARGET:=proc-trace
 
-TEST=/bin/ls
-TEST_ARG="/"
+TEST?=/bin/ls
+TEST_ARG?="/"
 
 all: $(TARGET)
 
@@ -32,8 +32,9 @@ trace: $(TARGET) $(CSD_DECODER)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
 	sudo ../$(TARGET) $(TEST) $(TEST_ARG) && \
-	../$(CSD_DECODER) -ss_dir . && \
-	python3 ../trc_pkt_stat.py trc_pkt_lister.ppl
+	echo "done"
+	# ../$(CSD_DECODER) -ss_dir . && \
+	# python3 ../trc_pkt_stat.py trc_pkt_lister.ppl
 
 run: $(TARGET)
 	sudo ./$(TARGET) $(TEST) $(TEST_ARG)
