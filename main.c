@@ -17,6 +17,7 @@
 #include "cs_util_create_snapshot.h"
 #include "cs_demo_known_boards.h"
 
+#define ENABLE_DUMP_CONFIG 1
 #define TRACE_CPU 1
 #define SYS_MEM_START 0xffff00000000UL
 
@@ -532,9 +533,11 @@ static void start_trace(pid_t pid)
 
   printf("Trace configured\n");
 
+#if ENABLE_DUMP_CONFIG
   printf("dumping config with %s\n", itm ? "ITM enabled" : "No ITM");
   do_dump_config(board, &devices, itm);
   cs_checkpoint();
+#endif
 
   printf("CSDEMO: trace buffer contents: %u bytes\n",
       cs_get_buffer_unread_bytes(devices.etb));
