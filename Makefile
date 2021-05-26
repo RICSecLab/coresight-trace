@@ -27,18 +27,15 @@ TESTS:= \
   tests/fib \
   tests/loop \
 
-all: $(TARGET)
+DIR?=trace/$(shell date +%Y-%m-%d-%H-%M-%S)
+TRACEE?=tests/fib
 
-trace: $(TARGET) $(CSD_DECODER)
+all: $(TARGET) $(TESTS)
+
+trace: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo ../$(TARGET) $(TEST) $(TEST_ARG) && \
-	echo "done"
-	# ../$(CSD_DECODER) -ss_dir . && \
-	# python3 ../trc_pkt_stat.py trc_pkt_lister.ppl
-
-run: $(TARGET)
-	sudo ./$(TARGET) $(TEST) $(TEST_ARG)
+	sudo $(realpath $(TARGET)) $(realpath $(TRACEE))
 
 $(TARGET): $(OBJS) $(CSKNOWNBOARDS) $(LIBCSACCESS) $(LIBCSACCUTIL)
 	$(CC) -o $@ $^
@@ -58,4 +55,4 @@ $(LIBCSACCUTIL):
 clean:
 	rm -f *.o $(TARGET) $(TESTS)
 
-.PHONY: all run clean
+.PHONY: all trace clean

@@ -1,3 +1,4 @@
+trace
 proc-trace
 *.o
 *.bin
