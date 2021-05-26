@@ -588,7 +588,7 @@ static void exit_trace(pid_t pid)
 void child(char *argv[])
 {
   ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-  execv(argv[0], argv);
+  execvp(argv[0], argv);
 }
 
 void parent(pid_t pid)
