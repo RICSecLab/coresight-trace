@@ -17,7 +17,10 @@ CSD_PLAT:=linux-arm64
 CSD_BUILD:=rel
 CSD_DECODER:=$(CSD_BASE)/decoder/tests/bin/$(CSD_PLAT)/$(CSD_BUILD)/trc_pkt_lister_s
 
-CFLAGS:=-I$(CSAL_INC) -I$(CSAL_DEMO)
+CFLAGS:= \
+  -Wall \
+  -I$(CSAL_INC) \
+  -I$(CSAL_DEMO) \
 
 SRCS:=$(wildcard *.c)
 OBJS:=$(SRCS:.c=.o)
