@@ -76,7 +76,6 @@ static int do_config_etmv3_ptm(int n_core)
     //   cs_etm_config_print(&tconfig);
     tconfig.flags = CS_ETMC_TRACE_ENABLE;
 
-#if 0
     if (!full) {
         /* Select address comparator #0 as a start address */
         /* Select address comparator #1 as a stop address */
@@ -94,7 +93,6 @@ static int do_config_etmv3_ptm(int n_core)
 //      tconfig.addr_comp[1].access_type = CS_ETMACT_EX|CS_ETMACT_ARMTHUMB|CS_ETMACT_USER;
         tconfig.addr_comp[1].access_type = 0x1 | CS_ETMACT_ARMTHUMB;
     }
-#endif
     tconfig.flags |= CS_ETMC_COUNTER;
     tconfig.counter_mask = 0x03;	/* set first 2 bits in mask to ensure first 2 counters are programmed */
     tconfig.counter[0].value = 0x1000;
@@ -162,26 +160,6 @@ static int do_config_etmv4(int n_core)
         tconfig.configr.bits.rs = 1; /* set the return stack */
     
     if (!full) {
-#if 0
-        /*  set up an address range filter - use comparator pair and the view-inst registers */
-
-        tconfig.addr_comps[0].acvr_l = o_trace_start_address & 0xFFFFFFFF;
-        tconfig.addr_comps[0].acvr_h =
-            (o_trace_start_address >> 32) & 0xFFFFFFFF;
-        tconfig.addr_comps[0].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
-        tconfig.addr_comps[1].acvr_l = o_trace_end_address & 0xFFFFFFFF;
-        tconfig.addr_comps[1].acvr_h =
-            (o_trace_end_address >> 32) & 0xFFFFFFFF;
-        tconfig.addr_comps[1].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
-
-        /* mark the config structure to program the above registers on 'put' */
-        tconfig.addr_comps_acc_mask = 0x3;
-        tconfig.flags |= CS_ETMC_ADDR_COMP;
-
-        /* finally, set up ViewInst to trace according to the resources we have set up */
-        tconfig.viiectlr = 0x1;	/* program the address comp pair 0 for include */
-        tconfig.syncpr = 0x14;	/* 4096 bytes per sync */
-#endif
         for (int i = 0; i < addr_range_count; i++) {
             /*  set up an address range filter - use comparator pair and the view-inst registers */
             tconfig.addr_comps[i * 2].acvr_l = addr_range_cmps[i].start & 0xFFFFFFFF;
@@ -340,12 +318,6 @@ static int do_configure_trace(const struct board *board)
     }
 
     for (i = 0; i < board->n_cpu; ++i) {
-#if 0
-        if (cpu >= 0 && i != cpu) {
-          printf("Skipping Trace enabling for CPU #%d\n", i);
-          continue;
-        }
-#endif
         if (trace_timestamps)
             cs_trace_enable_timestamps(devices.ptm[i], 1);
         if (trace_cycle_accurate)
@@ -391,51 +363,6 @@ static int do_configure_trace(const struct board *board)
     printf("CSDEMO: Configured and enabled trace.\n");
     return 0;
 }
-
-#if 0
-static int get_mem_range(pid_t pid, unsigned long *start, unsigned long *end)
-{
-  FILE *fp;
-  char maps_path[PATH_MAX];
-  char *line;
-  size_t n;
-  ssize_t readn;
-  unsigned long start_addr;
-  unsigned long end_addr;
-  char c;
-  char x;
-
-  memset(maps_path, 0, sizeof(maps_path));
-  snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
-
-  fp = fopen(maps_path, "r");
-  if (fp == NULL) {
-    perror("fopen");
-    return -1;
-  }
-
-  line = NULL;
-  n = 0;
-  readn = 0;
-  while ((readn = getline(&line, &n, fp)) != -1) {
-    sscanf(line, "%lx-%lx %c%c%c", &start_addr, &end_addr, &c, &c, &x);
-    if (x == 'x' && end_addr < SYS_MEM_START) {
-      *start = start_addr;
-      *end = end_addr;
-      if (line != NULL) {
-        free(line);
-      }
-      return 0;
-    }
-  }
-
-  if (line != NULL) {
-    free(line);
-  }
-  // No user executable memory region found
-  return -1;
-}
-#endif
 
 static int get_mem_range(pid_t pid)
 {
@@ -485,12 +412,6 @@ static int get_mem_range(pid_t pid)
 
 static void start_trace(pid_t pid)
 {
-#if 0
-  if (get_mem_range(pid, &o_trace_start_address, &o_trace_end_address) < 0) {
-    fprintf(stderr, "get_mem_range() failed\n");
-    return;
-  }
-#endif
   if (get_mem_range(pid) < 0) {
     fprintf(stderr, "get_mem_range() failed\n");
     return;
@@ -498,7 +419,6 @@ static void start_trace(pid_t pid)
 
   // Use address range filter
   full = false;
-  //printf("Trace [0x%lx-0x%lx]\n", o_trace_start_address, o_trace_end_address);
 
   for (int i = 0; i < addr_range_count; i++) {
     printf("Trace [0x%lx-0x%lx]\n", addr_range_cmps[i].start, addr_range_cmps[i].end);
@@ -554,12 +474,6 @@ static void exit_trace(pid_t pid)
 
   printf("CSDEMO: Disable trace...\n");
   for (i = 0; i < board->n_cpu; ++i) {
-#if 0
-    if (cpu >= 0 && i != cpu) {
-      printf("Skipping Trace disabling for CPU #%d\n", i);
-      continue;
-    }
-#endif
     cs_trace_disable(devices.ptm[i]);
   }
   cs_sink_disable(devices.etb);
