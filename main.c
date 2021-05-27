@@ -61,80 +61,6 @@ static void show_etm_config(unsigned int n)
     cs_etm_config_print_ex(devices.ptm[n], p_config);
 }
 
-static int do_config_etmv3_ptm(int n_core)
-{
-    cs_etm_config_t tconfig;
-
-    cs_etm_config_init(&tconfig);
-    tconfig.flags = CS_ETMC_TRACE_ENABLE;
-    cs_etm_config_get(devices.ptm[n_core], &tconfig);
-    //   cs_etm_config_print(&tconfig);
-    tconfig.flags = CS_ETMC_TRACE_ENABLE;
-
-    if (!full) {
-        /* Select address comparator #0 as a start address */
-        /* Select address comparator #1 as a stop address */
-        /* n.b. ETM numbers the comparators from 1. */
-        tconfig.flags |= CS_ETMC_ADDR_COMP;
-        tconfig.trace_enable_cr1 = 0x1;	/* address range comparator 0 */
-        tconfig.trace_start_comparators = 0x0000;	/* Select comparator #0 as a start address */
-        tconfig.trace_stop_comparators = 0x0000;	/* Select comparator #1 as a stop address  */
-        tconfig.addr_comp_mask = 0x3;	/* Set address comparators 0 and 1 for programming */
-        tconfig.addr_comp[0].address = o_trace_start_address & 0xFFFFFFFE;
-//      tconfig.addr_comp[0].access_type = CS_ETMACT_EX|CS_ETMACT_ARMTHUMB|CS_ETMACT_USER;
-        //tconfig.addr_comp[0].access_type = 0x1;
-        tconfig.addr_comp[0].access_type = 0x1 | CS_ETMACT_ARMTHUMB;
-        tconfig.addr_comp[1].address = o_trace_end_address & 0xFFFFFFFE;
-//      tconfig.addr_comp[1].access_type = CS_ETMACT_EX|CS_ETMACT_ARMTHUMB|CS_ETMACT_USER;
-        tconfig.addr_comp[1].access_type = 0x1 | CS_ETMACT_ARMTHUMB;
-    }
-    tconfig.flags |= CS_ETMC_COUNTER;
-    tconfig.counter_mask = 0x03;	/* set first 2 bits in mask to ensure first 2 counters are programmed */
-    tconfig.counter[0].value = 0x1000;
-    tconfig.counter[0].enable_event = CS_ETMER_ALWAYS;	/*CS_ETMER_SAC(0); */
-    tconfig.counter[0].reload_value = 0x2000;
-    tconfig.counter[0].reload_event = CS_ETMER_CZERO(0);
-    tconfig.counter[1].value = 0x1000;
-    tconfig.counter[1].enable_event = CS_ETMER_SEQSTATE(2);
-    tconfig.counter[1].reload_value = 0x2000;
-    tconfig.counter[1].reload_event = CS_ETMER_CZERO(1);
-
-    tconfig.flags |= CS_ETMC_SEQUENCER;
-    tconfig.sequencer.state = 1;
-    tconfig.sequencer.transition_event[CS_ETMSQOFF(1, 2)] =
-        CS_ETMER_SAC(0);
-    tconfig.sequencer.transition_event[CS_ETMSQOFF(2, 3)] =
-        CS_ETMER_SAC(1);
-    tconfig.sequencer.transition_event[CS_ETMSQOFF(1, 3)] = CS_ETME_NEVER;
-    tconfig.sequencer.transition_event[CS_ETMSQOFF(2, 1)] = CS_ETME_NEVER;
-    tconfig.sequencer.transition_event[CS_ETMSQOFF(3, 1)] = CS_ETME_NEVER;
-    tconfig.sequencer.transition_event[CS_ETMSQOFF(3, 2)] = CS_ETME_NEVER;
-    
-    if (trace_timestamps) {
-        tconfig.flags |= CS_ETMC_TS_EVENT;
-        tconfig.timestamp_event = CS_ETMER_CZERO(0);
-    }
-
-    if (return_stack) {
-        tconfig.cr.raw.c.ret_stack = 1;
-    }
-
-    cs_etm_config_print(&tconfig);
-    cs_etm_config_put(devices.ptm[n_core], &tconfig);
-
-    /* Show the resulting configuration */
-    printf("CSDEMO: Reading back configuration after programming...\n");
-    show_etm_config(n_core);
-
-    if (cs_error_count() > 0) {
-        printf
-            ("CSDEMO: %u errors reported in configuration - not running demo\n",
-             cs_error_count());
-        return -1;
-    }
-    return 0;
-}
-
 static int do_config_etmv4(int n_core)
 {
     cs_etmv4_config_t tconfig;
@@ -193,7 +119,6 @@ static int do_config_etmv4(int n_core)
 static int do_init_etm(cs_device_t dev)
 {
     int rc;
-    struct cs_etm_config config;
     int etm_version = cs_etm_get_version(dev);
 
     printf("CSDEMO: Initialising ETM/PTM\n");
@@ -210,49 +135,35 @@ static int do_init_etm(cs_device_t dev)
     /* program up some basic trace control.
        Set up to trace all instructions.
     */
-    if (!CS_ETMVERSION_IS_ETMV4(etm_version)) {
+    /* ETMv4 support only */
+    assert(CS_ETMVERSION_IS_ETMV4(etm_version));
+    /* ETMv4 initialisation */
+    cs_etmv4_config_t v4config;
 
-        cs_etm_config_init(&config);
-        config.flags = CS_ETMC_CONFIG;
-        cs_etm_config_get(dev, &config);
-        config.trace_enable_event = CS_ETMER_ALWAYS;
-        config.flags |= CS_ETMC_TRACE_ENABLE;
-        /* "To trace all memory:
-           - set bit [24] in the ETMTECR1 to 1
-           - set all other bits in the ETMTECR1 to 0
-           - set the ETMEEVER to 0x6F (TRUE)
-           This has the effect of excluding nothing, that is, tracing everything." */
-        config.trace_enable_event = CS_ETMER_ALWAYS;
-        config.trace_enable_cr1 = CS_ETMTECR1_EXCLUDE;
-        config.trace_enable_cr2 = 0x00000000;
-        cs_etm_config_put(dev, &config);
-    } else {
-        /* ETMv4 initialisation */
-        cs_etmv4_config_t v4config;
-
-        cs_etm_config_init_ex(dev, &v4config);
-        v4config.flags = CS_ETMC_CONFIG;
-        cs_etm_config_get_ex(dev, &v4config);
-        v4config.flags |= CS_ETMC_TRACE_ENABLE | CS_ETMC_EVENTSELECT;
-        /* trace enable */
-        if (itm_only) {
+    cs_etm_config_init_ex(dev, &v4config);
+    v4config.flags = CS_ETMC_CONFIG;
+    cs_etm_config_get_ex(dev, &v4config);
+    v4config.flags |= CS_ETMC_TRACE_ENABLE | CS_ETMC_EVENTSELECT;
+    /* trace enable */
+    if (itm_only) {
+        if (registration_verbose)
             printf("No Viewinst, ITM only\n");
-            v4config.victlr = 0x0;	/* Viewinst - trace nothing. */
-        } else {
+        v4config.victlr = 0x0;	/* Viewinst - trace nothing. */
+    } else {
+        if (registration_verbose)
             printf("Viewinst trace everything\n");
-            v4config.victlr = 0x201;	/* Viewinst - trace all, ss started. */
-        }
-        v4config.viiectlr = 0;	/* no address range */
-        v4config.vissctlr = 0;	/* no start stop points */
-        /* event select */
-        v4config.eventctlr0r = 0;	/* disable all event tracing */
-        v4config.eventctlr1r = 0;
-        /* config */
-        v4config.stallcrlr = 0;	/* no stall */
-        v4config.syncpr = 0xC;	/* sync 4096 bytes */
-        cs_etm_config_put_ex(dev, &v4config);
-
+        v4config.victlr = 0x201;	/* Viewinst - trace all, ss started. */
     }
+    v4config.viiectlr = 0;	/* no address range */
+    v4config.vissctlr = 0;	/* no start stop points */
+    /* event select */
+    v4config.eventctlr0r = 0;	/* disable all event tracing */
+    v4config.eventctlr1r = 0;
+    /* config */
+    v4config.stallcrlr = 0;	/* no stall */
+    v4config.syncpr = 0xC;	/* sync 4096 bytes */
+    cs_etm_config_put_ex(dev, &v4config);
+
     return 0;
 }
 
@@ -292,10 +203,12 @@ static int do_configure_trace(const struct board *board)
 
     for (i = 0; i < board->n_cpu; ++i) {
         if (CS_ETMVERSION_MAJOR(cs_etm_get_version(devices.ptm[i])) >=
-            CS_ETMVERSION_ETMv4)
+            CS_ETMVERSION_ETMv4) {
             r = do_config_etmv4(i);
-        else
-            r = do_config_etmv3_ptm(i);
+        } else {
+            fprintf(stderr, "** Unsupported ETM for CPU #%d\n", i);
+            continue;
+        }
         if (r != 0)
             return r;
     }
