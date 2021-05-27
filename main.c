@@ -25,7 +25,7 @@ const char *board_name = "Marvell ThunderX2";
 const bool itm_only = false;
 const bool itm = false;
 const bool trace_timestamps = false;
-const bool trace_cycle_accurate = true;
+const bool trace_cycle_accurate = false;
 const bool etb_stop_on_flush = true;
 const bool return_stack = true;
 
