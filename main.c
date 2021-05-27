@@ -26,7 +26,7 @@ const bool itm_only = false;
 const bool itm = false;
 const bool trace_timestamps = false;
 const bool trace_cycle_accurate = false;
-const bool etb_stop_on_flush = true;
+const bool etb_stop_on_flush = false;
 const bool return_stack = true;
 
 static bool full = true;
