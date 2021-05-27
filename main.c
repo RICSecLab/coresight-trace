@@ -19,7 +19,6 @@
 
 #define ENABLE_DUMP_CONFIG 1
 #define TRACE_CPU 1
-#define SYS_MEM_START 0xffff00000000UL
 
 const char *board_name = "Marvell ThunderX2";
 const bool itm_only = false;
@@ -33,10 +32,6 @@ static bool full = true;
 
 static struct cs_devices_t devices;
 const struct board *board;
-
-#define INVALID_ADDRESS 1
-static unsigned long o_trace_start_address = INVALID_ADDRESS;
-static unsigned long o_trace_end_address = INVALID_ADDRESS;
 
 static int cpu = TRACE_CPU;
 static cpu_set_t affinity_mask;
@@ -493,7 +488,6 @@ static void exit_trace(pid_t pid)
   printf("CSDEMO: shutdown...\n");
   cs_shutdown();
 
-  //printf("Traced [0x%lx-0x%lx]\n", o_trace_start_address, o_trace_end_address);
   for (int i = 0; i < addr_range_count; i++) {
     printf("Traced [0x%lx-0x%lx]\n", addr_range_cmps[i].start, addr_range_cmps[i].end);
   }
