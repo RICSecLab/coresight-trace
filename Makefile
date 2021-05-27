@@ -4,7 +4,7 @@ SHELL:=bash
 
 CSAL_BASE:=CSAL
 CSAL_ARCH:=arm64
-CSAL_BUILD:=dbg
+CSAL_BUILD:=rel
 CSAL_INC:=$(CSAL_BASE)/include
 CSAL_LIB:=$(CSAL_BASE)/lib/$(CSAL_ARCH)/$(CSAL_BUILD)
 CSAL_DEMO:=$(CSAL_BASE)/demos
@@ -43,16 +43,15 @@ $(TARGET): $(OBJS) $(CSKNOWNBOARDS) $(LIBCSACCESS) $(LIBCSACCUTIL)
 $(CSD_DECODER):
 	$(MAKE) -C $(CSD_BASE)/decoder/build/linux -f makefile.dev
 
-$(CSKNOWNBOARDS):
-	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) DEBUG=1 # TODO
+libcsal:
+	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) NO_DIAG=1
 
-$(LIBCSACCESS):
-	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) DEBUG=1 # TODO
-
-$(LIBCSACCUTIL):
-	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) DEBUG=1 # TODO
+$(CSKNOWNBOARDS): libcsal
+$(LIBCSACCESS): libcsal
+$(LIBCSACCUTIL): libcsal
 
 clean:
+	$(MAKE) -C $(CSAL_BASE) clean ARCH=$(CSAL_ARCH) NO_DIAG=1 && \
 	rm -f *.o $(TARGET) $(TESTS)
 
-.PHONY: all trace clean
+.PHONY: all trace libcsal clean
