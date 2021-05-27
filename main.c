@@ -36,6 +36,8 @@ const struct board *board;
 static int cpu = TRACE_CPU;
 static cpu_set_t affinity_mask;
 
+extern int registration_verbose;
+
 struct addr_range {
     unsigned long start;
     unsigned long end;
@@ -121,7 +123,8 @@ static int do_init_etm(cs_device_t dev)
     int rc;
     int etm_version = cs_etm_get_version(dev);
 
-    printf("CSDEMO: Initialising ETM/PTM\n");
+    if (registration_verbose)
+        printf("CSDEMO: Initialising ETM/PTM\n");
 
     /* ASSERT that this is an etm etc */
     assert(cs_device_has_class(dev, CS_DEVCLASS_SOURCE));
@@ -171,7 +174,8 @@ static int do_configure_trace(const struct board *board)
 {
     int i, r;
 
-    printf("CSDEMO: Configuring trace...\n");
+    if (registration_verbose)
+        printf("CSDEMO: Configuring trace...\n");
     /* Ensure TPIU isn't generating back-pressure */
     cs_disable_tpiu();
     /* While programming, ensure we are not collecting trace */
@@ -180,9 +184,10 @@ static int do_configure_trace(const struct board *board)
         cs_sink_disable(devices.itm_etb);
     }
     for (i = 0; i < board->n_cpu; ++i) {
-        printf
-            ("CSDEMO: Configuring trace source id for CPU #%d ETM/PTM...\n",
-             i);
+        if (registration_verbose)
+            printf
+                ("CSDEMO: Configuring trace source id for CPU #%d ETM/PTM...\n",
+                 i);
         devices.ptm[i] = cs_cpu_get_device(i, CS_DEVCLASS_SOURCE);
         if (devices.ptm[i] == CS_ERRDESC) {
             fprintf(stderr, "** Failed to get trace source for CPU #%d\n",
@@ -213,7 +218,8 @@ static int do_configure_trace(const struct board *board)
             return r;
     }
 
-    printf("CSDEMO: Enabling trace...\n");
+    if (registration_verbose)
+        printf("CSDEMO: Enabling trace...\n");
     if (cs_sink_enable(devices.etb) != 0) {
         printf
             ("CSDEMO: Could not enable trace buffer - not running demo\n");
@@ -248,8 +254,9 @@ static int do_configure_trace(const struct board *board)
         ffcr_val = cs_device_read(devices.etb, CS_ETB_FLFMT_CTRL);
         ffcr_val |= CS_ETB_FLFMT_CTRL_StopFl;
         if (cs_device_write(devices.etb, CS_ETB_FLFMT_CTRL, ffcr_val) == 0) {
-            printf("CSDEMO: setting stop on flush, ETB FFCR = 0x%08X",
-                   ffcr_val);
+            if (registration_verbose)
+                printf("CSDEMO: setting stop on flush, ETB FFCR = 0x%08X",
+                       ffcr_val);
         } else {
             printf
                 ("CSDEMO: Failed to set stop on flush, ETB FFCR to 0x%08X",
@@ -265,10 +272,12 @@ static int do_configure_trace(const struct board *board)
         return -1;
     }
 
-    printf("CSDEMO: CTI settings....\n");
+    if (registration_verbose)
+        printf("CSDEMO: CTI settings....\n");
     cs_cti_diag();
 
-    printf("CSDEMO: Configured and enabled trace.\n");
+    if (registration_verbose)
+        printf("CSDEMO: Configured and enabled trace.\n");
     return 0;
 }
 
@@ -359,28 +368,26 @@ static void start_trace(pid_t pid)
     return;
   }
 
-  printf("Trace configured\n");
-
 #if ENABLE_DUMP_CONFIG
   printf("dumping config with %s\n", itm ? "ITM enabled" : "No ITM");
   do_dump_config(board, &devices, itm);
-  cs_checkpoint();
 #endif
+  cs_checkpoint();
 
   printf("CSDEMO: trace buffer contents: %u bytes\n",
       cs_get_buffer_unread_bytes(devices.etb));
 
-  // TODO:
-  printf("TODO: Start tracing PID: %d\n", pid);
+  printf("Start tracing PID: %d\n", pid);
 }
 
 static void exit_trace(pid_t pid)
 {
   int i;
-  // TODO:
-  printf("TODO: Exit tracing PID: %d\n", pid);
 
-  printf("CSDEMO: Disable trace...\n");
+  printf("Exit tracing PID: %d\n", pid);
+
+  if (registration_verbose)
+    printf("CSDEMO: Disable trace...\n");
   for (i = 0; i < board->n_cpu; ++i) {
     cs_trace_disable(devices.ptm[i]);
   }
@@ -398,7 +405,8 @@ static void exit_trace(pid_t pid)
 
   do_fetch_trace(&devices, itm);
 
-  printf("CSDEMO: shutdown...\n");
+  if (registration_verbose)
+    printf("CSDEMO: shutdown...\n");
   cs_shutdown();
 
   for (int i = 0; i < addr_range_count; i++) {
@@ -446,6 +454,8 @@ int main(int argc, char *argv[])
   }
 
   pid_t pid;
+
+  registration_verbose = 0;
 
   pid = fork();
   switch (pid) {
