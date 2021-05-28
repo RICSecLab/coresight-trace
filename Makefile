@@ -34,7 +34,16 @@ TESTS:= \
 DIR?=trace/$(shell date +%Y-%m-%d-%H-%M-%S)
 TRACEE?=tests/fib
 
+BF_HELLO:="+[-->-[>>+>-----<<]<--<---]>-.>>>+.>>..+++[.>]<<<<.+++.------.<<-.>>>>+."
+BF_INC:="[->+<]"
+BF_CODE?=$(BF_HELLO)
+
 all: $(TARGET) $(TESTS)
+
+trace-bf: $(TARGET) $(TESTS)
+	mkdir -p $(DIR) && \
+	cd $(DIR) && \
+	sudo $(realpath $(TARGET)) $(realpath $(TRACEE)) $(BF_CODE)
 
 trace: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
