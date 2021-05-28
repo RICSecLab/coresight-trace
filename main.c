@@ -19,7 +19,7 @@
 
 #define ENABLE_DUMP_CONFIG 1
 #define ENABLE_SHOW_ETM_CONFIG 0
-#define TRACE_CPU 1
+#define TRACE_CPU 0
 
 const char *board_name = "Marvell ThunderX2";
 const bool itm_only = false;
@@ -103,7 +103,7 @@ static int do_config_etmv4(int n_core)
 
         /* mark the config structure to program the above registers on 'put' */
         tconfig.flags |= CS_ETMC_ADDR_COMP;
-        tconfig.syncpr = 0x14;	/* 4096 bytes per sync */
+        tconfig.syncpr = 0xc;	/* 4096 bytes per sync */
     }
 #if ENABLE_SHOW_ETM_CONFIG
     cs_etm_config_print_ex(etm, &tconfig);
