@@ -17,8 +17,8 @@
 #include "cs_util_create_snapshot.h"
 #include "cs_demo_known_boards.h"
 
-#define ENABLE_DUMP_CONFIG 1
-#define ENABLE_SHOW_ETM_CONFIG 0
+#define DUMP_CONFIG 1
+#define SHOW_ETM_CONFIG 0
 #define TRACE_CPU 0
 
 const char *board_name = "Marvell ThunderX2";
@@ -45,7 +45,7 @@ struct addr_range {
 } addr_range_cmps[ETMv4_NUM_ADDR_COMP_MAX / 2];
 static int addr_range_count = 0;
 
-#if ENABLE_SHOW_ETM_CONFIG
+#if SHOW_ETM_CONFIG
 static void show_etm_config(unsigned int n)
 {
     cs_etm_config_t tconfig;	/* PTM/ETMv3 config */
@@ -105,12 +105,12 @@ static int do_config_etmv4(int n_core)
         tconfig.flags |= CS_ETMC_ADDR_COMP;
         tconfig.syncpr = 0xc;	/* 4096 bytes per sync */
     }
-#if ENABLE_SHOW_ETM_CONFIG
+#if SHOW_ETM_CONFIG
     cs_etm_config_print_ex(etm, &tconfig);
 #endif
     cs_etm_config_put_ex(etm, &tconfig);
 
-#if ENABLE_SHOW_ETM_CONFIG
+#if SHOW_ETM_CONFIG
     /* Show the resulting configuration */
     if (registration_verbose)
         printf("CSDEMO: Reading back configuration after programming...\n");
@@ -376,7 +376,7 @@ static void start_trace(pid_t pid)
     return;
   }
 
-#if ENABLE_DUMP_CONFIG
+#if DUMP_CONFIG
   printf("dumping config with %s\n", itm ? "ITM enabled" : "No ITM");
   do_dump_config(board, &devices, itm);
 #endif
@@ -407,7 +407,7 @@ static void exit_trace(pid_t pid)
   printf("CSDEMO: trace buffer contents: %u bytes\n",
       cs_get_buffer_unread_bytes(devices.etb));
 
-#if ENABLE_SHOW_ETM_CONFIG
+#if SHOW_ETM_CONFIG
   for (i = 0; i < board->n_cpu; ++i) {
     show_etm_config(i);
   }
