@@ -4,5 +4,6 @@ proc-trace
 *.o
 *.bin
 *.ini
+tests/bf
 tests/fib
 tests/loop

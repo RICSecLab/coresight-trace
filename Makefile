@@ -29,6 +29,7 @@ TARGET:=proc-trace
 TESTS:= \
   tests/fib \
   tests/loop \
+  tests/bf \
 
 DIR?=trace/$(shell date +%Y-%m-%d-%H-%M-%S)
 TRACEE?=tests/fib
