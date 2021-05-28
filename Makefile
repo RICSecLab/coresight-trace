@@ -64,7 +64,9 @@ $(LIBCSACCESS): libcsal
 $(LIBCSACCUTIL): libcsal
 
 clean:
-	$(MAKE) -C $(CSAL_BASE) clean ARCH=$(CSAL_ARCH) NO_DIAG=1 && \
 	rm -f *.o $(TARGET) $(TESTS)
 
-.PHONY: all trace libcsal clean
+dist-clean: clean
+	$(MAKE) -C $(CSAL_BASE) clean ARCH=$(CSAL_ARCH) NO_DIAG=1
+
+.PHONY: all trace libcsal clean dist-clean
