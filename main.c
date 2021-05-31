@@ -10,12 +10,19 @@
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
+#include <sys/uio.h>
+#include <linux/elf.h>
+#include <asm/ptrace.h>
 
 #include "csaccess.h"
 #include "csregistration.h"
 #include "csregisters.h"
 #include "cs_util_create_snapshot.h"
 #include "cs_demo_known_boards.h"
+
+#define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
+#define PAGE_SIZE 0x1000
 
 #define DUMP_CONFIG 1
 #define SHOW_ETM_CONFIG 0
@@ -442,11 +449,6 @@ static void start_trace(pid_t pid)
     return;
   }
 
-  if (0) {
-    cs_shutdown();
-    return;
-  }
-
   if (cpu >= 0) {
     printf("Set CPU affinity: CPU #%d\n", cpu);
     CPU_ZERO(&affinity_mask);
@@ -512,6 +514,58 @@ static void exit_trace(pid_t pid)
   dump_mem_range();
 }
 
+static void suspend_trace(void)
+{
+  int i;
+
+  if (registration_verbose)
+    printf("CSDEMO: Disable trace...\n");
+  for (i = 0; i < board->n_cpu; ++i) {
+    cs_trace_disable(devices.ptm[i]);
+  }
+  cs_sink_disable(devices.etb);
+  if (devices.itm_etb != NULL) {
+    cs_sink_disable(devices.itm_etb);
+  }
+
+  printf("CSDEMO: trace buffer contents: %u bytes\n",
+      cs_get_buffer_unread_bytes(devices.etb));
+
+  do_fetch_trace(&devices, itm);
+
+  if (registration_verbose)
+    printf("CSDEMO: shutdown...\n");
+  cs_shutdown();
+}
+
+static void resume_trace(pid_t pid)
+{
+#if 0
+  printf("resume trace\n");
+  //
+  // TODO: Use our own board setup
+  if (setup_known_board_by_name(board_name, &board, &devices) < 0) {
+    fprintf(stderr, "setup_known_board_by_name() failed\n");
+    return;
+  }
+
+  if (do_configure_trace(board) < 0) {
+    fprintf(stderr, "do_configure_trace() failed\n");
+    return;
+  }
+
+#if DUMP_CONFIG
+  printf("dumping config with %s\n", itm ? "ITM enabled" : "No ITM");
+  do_dump_config(board, &devices, itm);
+#endif
+  cs_checkpoint();
+
+  printf("CSDEMO: trace buffer contents: %u bytes\n",
+      cs_get_buffer_unread_bytes(devices.etb));
+#endif
+  start_trace(pid);
+}
+
 void child(char *argv[])
 {
   ptrace(PTRACE_TRACEME, 0, NULL, NULL);
@@ -523,9 +577,22 @@ void parent(pid_t pid)
   int wstatus;
   bool is_first_exec;
   bool trace_started;
+  struct user_pt_regs regs;
+  struct iovec iov;
+  long syscall_num;
+  bool is_entered_mmap;
+  const long mmap_syscall = 222;
+
+  void *addr;
+  size_t length;
+  int prot;
+  int fd;
+  struct addr_range *range;
+  char fd_path[PATH_MAX];
 
   is_first_exec = true;
   trace_started = false;
+  is_entered_mmap = false;
 
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
@@ -535,12 +602,59 @@ void parent(pid_t pid)
       trace_started = true;
     }
   }
+  ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
   ptrace(PTRACE_CONT, pid, 0, 0);
 
-  waitpid(pid, &wstatus, 0);
-  if (WIFEXITED(wstatus) && trace_started == true) {
-    exit_trace(pid);
-    trace_started = false;
+  while (1) {
+    waitpid(pid, &wstatus, 0);
+    if (WIFEXITED(wstatus) && trace_started == true) {
+      exit_trace(pid);
+      trace_started = false;
+      return;
+    } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGTRAP) {
+      iov.iov_base = &regs;
+      iov.iov_len = sizeof(regs);
+      ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov);
+      syscall_num = regs.regs[8];
+      // TODO: It should support mprotect
+      if (syscall_num == mmap_syscall) {
+        if (is_entered_mmap == true) {
+          addr = (void *)regs.regs[0];
+          length = regs.regs[1];
+          prot = regs.regs[2];
+          fd = regs.regs[4];
+          if ((prot & PROT_EXEC) && fd > 2) {
+            if (addr_range_count < ETMv4_NUM_ADDR_COMP_MAX / 2) {
+              range = &addr_range_cmps[addr_range_count];
+
+              suspend_trace();
+              trace_started = false;
+
+              memset(fd_path, 0, sizeof(fd_path));
+              snprintf(fd_path, sizeof(fd_path), "/proc/%d/fd/%d", pid, fd);
+              readlink(fd_path, range->path, PATH_MAX);
+
+              range->start = (unsigned long)addr;
+              range->end = ALIGN_UP((unsigned long)addr + length, PAGE_SIZE);
+              addr_range_count += 1;
+              printf("Added [0x%lx-0x%lx]: %s\n",
+                  range->start,
+                  range->end,
+                  range->path);
+
+              resume_trace(pid);
+              trace_started = true;
+            } else {
+              fprintf(stderr, "** addr_range_count: %d\n", addr_range_count);
+            }
+          }
+          is_entered_mmap = false;
+        } else {
+          is_entered_mmap = true;
+        }
+      }
+    }
+    ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
   }
 }
 
