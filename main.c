@@ -21,6 +21,7 @@
 #define SHOW_ETM_CONFIG 0
 #define TRACE_CPU 0
 
+const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
 const bool itm_only = false;
 const bool itm = false;
@@ -42,6 +43,7 @@ extern int registration_verbose;
 struct addr_range {
     unsigned long start;
     unsigned long end;
+    char path[PATH_MAX];
 } addr_range_cmps[ETMv4_NUM_ADDR_COMP_MAX / 2];
 static int addr_range_count = 0;
 
@@ -289,6 +291,18 @@ static int do_configure_trace(const struct board *board)
     return 0;
 }
 
+static void dump_mem_range(void)
+{
+  int i;
+
+  for (i = 0; i < addr_range_count; i++) {
+    printf("[0x%lx-0x%lx]: %s\n",
+        addr_range_cmps[i].start,
+        addr_range_cmps[i].end,
+        addr_range_cmps[i].path);
+  }
+}
+
 static int get_mem_range(pid_t pid)
 {
   FILE *fp;
@@ -301,6 +315,7 @@ static int get_mem_range(pid_t pid)
   char c;
   char x;
   int count;
+  char *p;
 
   memset(maps_path, 0, sizeof(maps_path));
   snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
@@ -316,15 +331,27 @@ static int get_mem_range(pid_t pid)
   readn = 0;
   count = 0;
   while ((readn = getline(&line, &n, fp)) != -1) {
+    if (readn > 0 && line[readn - 1] == '\n') {
+      line[readn - 1] = '\0';
+      readn--;
+    }
     sscanf(line, "%lx-%lx %c%c%c", &start_addr, &end_addr, &c, &c, &x);
     if (x == 'x') {
       if (count < ETMv4_NUM_ADDR_COMP_MAX / 2) {
-        addr_range_cmps[count].start = start_addr;
-        addr_range_cmps[count].end = end_addr;
+        // FIXME: The below registers an exec region with absolute path only
+        // It means vDSO is not traced.
+        for (p = line; *p != '\0' && *p != '/'; p++) {
+        }
+        if (*p == '/') {
+          strncpy(addr_range_cmps[count].path, p, PATH_MAX - 1);
+          addr_range_cmps[count].path[PATH_MAX - 1] = '\0';
+          addr_range_cmps[count].start = start_addr;
+          addr_range_cmps[count].end = end_addr;
+          count += 1;
+        }
       } else {
         fprintf(stderr, "** WARNING: address range [0x%lx-0x%lx] will not trace\n", start_addr, end_addr);
       }
-      count += 1;
     }
   }
 
@@ -333,6 +360,67 @@ static int get_mem_range(pid_t pid)
   }
   addr_range_count = count;
   return count;
+}
+
+static int export_decoder_args(const char *args_path)
+{
+  const char *trace_name = "cstrace.bin"; // TODO: It depends on CSAL
+  char trace_path[PATH_MAX];
+  char *cwd;
+  //const int trace_id = 0x10; // TODO: Use CPU ID to trace ID table
+  // addr_range_count
+  FILE *fp;
+  int i;
+  int ret;
+
+  if (args_path == NULL) {
+    return -1;
+  }
+
+  fp = fopen(args_path, "w");
+  if (fp == NULL) {
+    perror("fopen");
+    return -1;
+  }
+
+  cwd = getcwd(NULL, 0);
+  if (cwd == NULL) {
+    perror("getcwd");
+    ret = -1;
+    goto exit;
+  }
+  memset(trace_path, 0, sizeof(trace_path));
+  snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
+  if ((ret = fprintf(fp, " %s", trace_path)) < 0) {
+    goto exit;
+  }
+  if ((ret = fprintf(fp, " %d", addr_range_count)) < 0) {
+    goto exit;
+  }
+  for (i = 0; i < addr_range_count; i++) {
+    ret = fprintf(fp, " %s 0x%lx 0x%lx",
+        addr_range_cmps[i].path,
+        addr_range_cmps[i].start,
+        addr_range_cmps[i].end);
+    if (ret < 0) {
+      goto exit;
+    }
+  }
+
+  ret = 0;
+
+exit:
+  if (cwd != NULL) {
+    free(cwd);
+  }
+
+  fclose(fp);
+
+  if (ret < 0) {
+    fprintf(stderr, "** WARNING: Failed to write decoder arguments\n");
+  }
+
+  return ret;
 }
 
 static void start_trace(pid_t pid)
@@ -345,9 +433,8 @@ static void start_trace(pid_t pid)
   // Use address range filter
   full = false;
 
-  for (int i = 0; i < addr_range_count; i++) {
-    printf("Trace [0x%lx-0x%lx]\n", addr_range_cmps[i].start, addr_range_cmps[i].end);
-  }
+  printf("Trace range:\n");
+  dump_mem_range();
 
   // TODO: Use our own board setup
   if (setup_known_board_by_name(board_name, &board, &devices) < 0) {
@@ -419,9 +506,10 @@ static void exit_trace(pid_t pid)
     printf("CSDEMO: shutdown...\n");
   cs_shutdown();
 
-  for (int i = 0; i < addr_range_count; i++) {
-    printf("Traced [0x%lx-0x%lx]\n", addr_range_cmps[i].start, addr_range_cmps[i].end);
-  }
+  export_decoder_args(decoder_args_path);
+
+  printf("Trace range:\n");
+  dump_mem_range();
 }
 
 void child(char *argv[])

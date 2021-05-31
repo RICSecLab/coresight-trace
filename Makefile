@@ -17,6 +17,9 @@ CSD_PLAT:=linux-arm64
 CSD_BUILD:=rel
 CSD_DECODER:=$(CSD_BASE)/decoder/tests/bin/$(CSD_PLAT)/$(CSD_BUILD)/trc_pkt_lister_s
 
+CSDEC_BASE:=coresight-decoder
+CSDEC:=$(CSDEC_BASE)/processor
+
 CFLAGS:= \
   -Wall \
   -I$(CSAL_INC) \
@@ -50,6 +53,12 @@ trace: $(TARGET) $(TESTS)
 	cd $(DIR) && \
 	sudo $(realpath $(TARGET)) $(realpath $(TRACEE))
 
+decode: $(CSDEC) trace
+	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
+
+$(CSDEC):
+	$(MAKE) -C $(CSDEC_BASE)
+
 $(TARGET): $(OBJS) $(CSKNOWNBOARDS) $(LIBCSACCESS) $(LIBCSACCUTIL)
 	$(CC) -o $@ $^
 
@@ -69,4 +78,4 @@ clean:
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean ARCH=$(CSAL_ARCH) NO_DIAG=1
 
-.PHONY: all trace libcsal clean dist-clean
+.PHONY: all trace decode libcsal clean dist-clean
