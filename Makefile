@@ -34,7 +34,8 @@ TESTS:= \
   tests/loop \
   tests/bf \
 
-DIR?=trace/$(shell date +%Y-%m-%d-%H-%M-%S)
+DATE:=$(shell date +%Y-%m-%d-%H-%M-%S)
+DIR?=trace/$(DATE)
 TRACEE?=tests/fib
 
 BF_HELLO:="+[-->-[>>+>-----<<]<--<---]>-.>>>+.>>..+++[.>]<<<<.+++.------.<<-.>>>>+."
