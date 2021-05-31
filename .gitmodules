@@ -4,3 +4,6 @@
 [submodule "OpenCSD"]
 	path = OpenCSD
 	url = git@github.com:RICSecLab/OpenCSD-ThunderX2.git
+[submodule "coresight-decoder"]
+	path = coresight-decoder
+	url = git@github.com:RICSecLab/coresight-decoder.git
