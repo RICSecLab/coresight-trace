@@ -71,4 +71,4 @@ clean:
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean ARCH=$(CSAL_ARCH) NO_DIAG=1
 
-.PHONY: all trace decode libcsal clean dist-clean
+.PHONY: all trace-bf trace decode libcsal clean dist-clean
