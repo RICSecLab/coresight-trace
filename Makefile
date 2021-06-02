@@ -16,6 +16,7 @@ CSDEC:=$(CSDEC_BASE)/processor
 
 CFLAGS:= \
   -Wall \
+  -I$(PWD) \
   -I$(CSAL_INC) \
   -I$(CSAL_DEMO) \
 

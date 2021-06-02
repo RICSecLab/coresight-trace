@@ -20,6 +20,8 @@
 #include "csregisters.h"
 #include "cs_util_create_snapshot.h"
 
+#include "config.h"
+
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 #define PAGE_SIZE 0x1000
 
@@ -29,14 +31,6 @@
 
 const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
-const bool itm_only = false;
-const bool itm = false;
-const bool trace_timestamps = false;
-const bool trace_cycle_accurate = false;
-const bool etb_stop_on_flush = false;
-const bool return_stack = true;
-
-static bool full = true;
 
 static struct cs_devices_t devices;
 const struct board *board;
@@ -53,251 +47,7 @@ struct addr_range {
     unsigned long end;
     char path[PATH_MAX];
 } addr_range_cmps[ETMv4_NUM_ADDR_COMP_MAX / 2];
-static int addr_range_count = 0;
-
-#if SHOW_ETM_CONFIG
-static void show_etm_config(unsigned int n)
-{
-    cs_etm_config_t tconfig;	/* PTM/ETMv3 config */
-    cs_etmv4_config_t t4config;	/* ETMv4 config */
-    void *p_config = 0;
-
-    if (CS_ETMVERSION_MAJOR(cs_etm_get_version(devices.ptm[n])) >=
-        CS_ETMVERSION_ETMv4)
-        p_config = &t4config;
-    else
-        p_config = &tconfig;
-
-    cs_etm_config_init_ex(devices.ptm[n], p_config);
-    tconfig.flags = CS_ETMC_ALL;
-    t4config.flags = CS_ETMC_ALL;
-    cs_etm_config_get_ex(devices.ptm[n], p_config);
-    cs_etm_config_print_ex(devices.ptm[n], p_config);
-}
-#endif
-
-static int do_config_etmv4(int n_core)
-{
-    cs_etmv4_config_t tconfig;
-    cs_device_t etm = devices.ptm[n_core];
-
-    /* default settings are trace everything - already set. */
-    cs_etm_config_init_ex(etm, &tconfig);
-    tconfig.flags =
-        CS_ETMC_TRACE_ENABLE | CS_ETMC_CONFIG | CS_ETMC_EVENTSELECT;
-    cs_etm_config_get_ex(etm, &tconfig);
-
-    if (tconfig.scv4->idr2.bits.vmidsize > 0)
-        tconfig.configr.bits.vmid = 1;	/* VMID trace enable */
-    if (tconfig.scv4->idr2.bits.cidsize > 0)
-        tconfig.configr.bits.cid = 1;	/* context ID trace enable. */
-
-    if (return_stack)
-        tconfig.configr.bits.rs = 1; /* set the return stack */
-    
-    if (!full) {
-        for (int i = 0; i < addr_range_count; i++) {
-            /*  set up an address range filter - use comparator pair and the view-inst registers */
-            tconfig.addr_comps[i * 2].acvr_l = addr_range_cmps[i].start & 0xFFFFFFFF;
-            tconfig.addr_comps[i * 2].acvr_h =
-                (addr_range_cmps[i].start >> 32) & 0xFFFFFFFF;
-            tconfig.addr_comps[i * 2].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
-            tconfig.addr_comps[i * 2 + 1].acvr_l = addr_range_cmps[i].end & 0xFFFFFFFF;
-            tconfig.addr_comps[i * 2 + 1].acvr_h =
-                (addr_range_cmps[i].end >> 32) & 0xFFFFFFFF;
-            tconfig.addr_comps[i * 2 + 1].acatr_l = 0x0;	/* instuction address compare, all ELs, no ctxt, vmid, data, etc */
-            tconfig.addr_comps_acc_mask |= (1 << (i * 2 + 1)) | (1 << (i * 2));
-            /* finally, set up ViewInst to trace according to the resources we have set up */
-            tconfig.viiectlr |= 1 << i;	/* program the address comp pair 0 for include */
-        }
-
-        /* mark the config structure to program the above registers on 'put' */
-        tconfig.flags |= CS_ETMC_ADDR_COMP;
-        tconfig.syncpr = 0xc;	/* 4096 bytes per sync */
-    }
-#if SHOW_ETM_CONFIG
-    cs_etm_config_print_ex(etm, &tconfig);
-#endif
-    cs_etm_config_put_ex(etm, &tconfig);
-
-#if SHOW_ETM_CONFIG
-    /* Show the resulting configuration */
-    if (registration_verbose)
-        printf("CSDEMO: Reading back configuration after programming...\n");
-    show_etm_config(n_core);
-#endif
-
-    if (cs_error_count() > 0) {
-        printf
-            ("CSDEMO: %u errors reported in configuration - not running demo\n",
-             cs_error_count());
-        return -1;
-    }
-    return 0;
-}
-
-static int do_init_etm(cs_device_t dev)
-{
-    int rc;
-    int etm_version = cs_etm_get_version(dev);
-
-    if (registration_verbose)
-        printf("CSDEMO: Initialising ETM/PTM\n");
-
-    /* ASSERT that this is an etm etc */
-    assert(cs_device_has_class(dev, CS_DEVCLASS_SOURCE));
-
-    /* set to a 'clean' state - clears events & values, retains ctrl and ID, ensure programmable */
-    if ((rc = cs_etm_clean(dev)) != 0) {
-        printf("CSDEMO: Failed to set ETM/PTM into clean state\n");
-        return rc;
-    }
-
-    /* program up some basic trace control.
-       Set up to trace all instructions.
-    */
-    /* ETMv4 support only */
-    assert(CS_ETMVERSION_IS_ETMV4(etm_version));
-    /* ETMv4 initialisation */
-    cs_etmv4_config_t v4config;
-
-    cs_etm_config_init_ex(dev, &v4config);
-    v4config.flags = CS_ETMC_CONFIG;
-    cs_etm_config_get_ex(dev, &v4config);
-    v4config.flags |= CS_ETMC_TRACE_ENABLE | CS_ETMC_EVENTSELECT;
-    /* trace enable */
-    if (itm_only) {
-        if (registration_verbose)
-            printf("No Viewinst, ITM only\n");
-        v4config.victlr = 0x0;	/* Viewinst - trace nothing. */
-    } else {
-        if (registration_verbose)
-            printf("Viewinst trace everything\n");
-        v4config.victlr = 0x201;	/* Viewinst - trace all, ss started. */
-    }
-    v4config.viiectlr = 0;	/* no address range */
-    v4config.vissctlr = 0;	/* no start stop points */
-    /* event select */
-    v4config.eventctlr0r = 0;	/* disable all event tracing */
-    v4config.eventctlr1r = 0;
-    /* config */
-    v4config.stallcrlr = 0;	/* no stall */
-    v4config.syncpr = 0xC;	/* sync 4096 bytes */
-    cs_etm_config_put_ex(dev, &v4config);
-
-    return 0;
-}
-
-static int do_configure_trace(const struct board *board)
-{
-    int i, r;
-
-    if (registration_verbose)
-        printf("CSDEMO: Configuring trace...\n");
-    /* Ensure TPIU isn't generating back-pressure */
-    cs_disable_tpiu();
-    /* While programming, ensure we are not collecting trace */
-    cs_sink_disable(devices.etb);
-    if (devices.itm_etb != NULL) {
-        cs_sink_disable(devices.itm_etb);
-    }
-    for (i = 0; i < board->n_cpu; ++i) {
-        if (registration_verbose)
-            printf
-                ("CSDEMO: Configuring trace source id for CPU #%d ETM/PTM...\n",
-                 i);
-        devices.ptm[i] = cs_cpu_get_device(i, CS_DEVCLASS_SOURCE);
-        if (devices.ptm[i] == CS_ERRDESC) {
-            fprintf(stderr, "** Failed to get trace source for CPU #%d\n",
-                    i);
-            return -1;
-        }
-        if (cs_set_trace_source_id(devices.ptm[i], 0x10 + i) < 0) {
-            return -1;
-        }
-        if (do_init_etm(devices.ptm[i]) < 0) {
-            return -1;
-        }
-    }
-    if (itm) {
-        cs_set_trace_source_id(devices.itm, 0x20);
-    }
-    cs_checkpoint();
-
-    for (i = 0; i < board->n_cpu; ++i) {
-        if (CS_ETMVERSION_MAJOR(cs_etm_get_version(devices.ptm[i])) >=
-            CS_ETMVERSION_ETMv4) {
-            r = do_config_etmv4(i);
-        } else {
-            fprintf(stderr, "** Unsupported ETM for CPU #%d\n", i);
-            continue;
-        }
-        if (r != 0)
-            return r;
-    }
-
-    if (registration_verbose)
-        printf("CSDEMO: Enabling trace...\n");
-    if (cs_sink_enable(devices.etb) != 0) {
-        printf
-            ("CSDEMO: Could not enable trace buffer - not running demo\n");
-        return -1;
-    }
-    if (devices.itm_etb != NULL) {
-        if (cs_sink_enable(devices.itm_etb) != 0) {
-            printf("CSDEMO: Could not enable ITM trace buffer\n");
-        }
-    }
-
-    for (i = 0; i < board->n_cpu; ++i) {
-        if (trace_timestamps)
-            cs_trace_enable_timestamps(devices.ptm[i], 1);
-        if (trace_cycle_accurate)
-            cs_trace_enable_cycle_accurate(devices.ptm[i], 1);
-        cs_trace_enable(devices.ptm[i]);
-    }
-
-    if (itm) {
-        cs_trace_swstim_enable_all_ports(devices.itm);
-        cs_trace_swstim_set_sync_repeat(devices.itm, 32);
-        if (trace_timestamps)
-            cs_trace_enable_timestamps(devices.itm, 1);
-        cs_trace_enable(devices.itm);
-    }
-
-    unsigned int ffcr_val;
-    /* for this demo we may set stop on flush and stop capture by maunal flushing later */
-    if (etb_stop_on_flush) {
-        /* set up some bits in the FFCR - enabling the  ETB later will retain these bits */
-        ffcr_val = cs_device_read(devices.etb, CS_ETB_FLFMT_CTRL);
-        ffcr_val |= CS_ETB_FLFMT_CTRL_StopFl;
-        if (cs_device_write(devices.etb, CS_ETB_FLFMT_CTRL, ffcr_val) == 0) {
-            if (registration_verbose)
-                printf("CSDEMO: setting stop on flush, ETB FFCR = 0x%08X",
-                       ffcr_val);
-        } else {
-            printf
-                ("CSDEMO: Failed to set stop on flush, ETB FFCR to 0x%08X",
-                 ffcr_val);
-        }
-    }
-
-    cs_checkpoint();
-    if (cs_error_count() > 0) {
-        printf
-            ("CSDEMO: %u errors reported when enabling trace - not running demo\n",
-             cs_error_count());
-        return -1;
-    }
-
-    if (registration_verbose)
-        printf("CSDEMO: CTI settings....\n");
-    cs_cti_diag();
-
-    if (registration_verbose)
-        printf("CSDEMO: Configured and enabled trace.\n");
-    return 0;
-}
+int addr_range_count = 0;
 
 static void dump_mem_range(void)
 {
@@ -438,9 +188,6 @@ static void start_trace(pid_t pid)
     return;
   }
 
-  // Use address range filter
-  full = false;
-
   printf("Trace range:\n");
   dump_mem_range();
 
@@ -460,14 +207,18 @@ static void start_trace(pid_t pid)
     }
   }
 
-  if (do_configure_trace(board) < 0) {
-    fprintf(stderr, "do_configure_trace() failed\n");
+  if (configure_trace(board, &devices) < 0) {
+    fprintf(stderr, "** configure_trace() failed\n");
+    return;
+  }
+
+  if (enable_trace(board, &devices) < 0) {
+    fprintf(stderr, "** enable_trace() failed\n");
     return;
   }
 
 #if DUMP_CONFIG
-  printf("dumping config with %s\n", itm ? "ITM enabled" : "No ITM");
-  do_dump_config(board, &devices, itm);
+  do_dump_config(board, &devices, 0);
 #endif
   cs_checkpoint();
 
@@ -502,7 +253,7 @@ static void exit_trace(pid_t pid)
   }
 #endif
 
-  do_fetch_trace(&devices, itm);
+  do_fetch_trace(&devices, 0);
 
   if (registration_verbose)
     printf("CSDEMO: shutdown...\n");
@@ -531,7 +282,7 @@ static void suspend_trace(void)
   printf("CSDEMO: trace buffer contents: %u bytes\n",
       cs_get_buffer_unread_bytes(devices.etb));
 
-  do_fetch_trace(&devices, itm);
+  do_fetch_trace(&devices, 0);
 
   if (registration_verbose)
     printf("CSDEMO: shutdown...\n");
