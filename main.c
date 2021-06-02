@@ -126,7 +126,6 @@ static int export_decoder_args(const char *args_path)
   char trace_path[PATH_MAX];
   char *cwd;
   //const int trace_id = 0x10; // TODO: Use CPU ID to trace ID table
-  // addr_range_count
   FILE *fp;
   int i;
   int ret;
@@ -291,29 +290,6 @@ static void suspend_trace(void)
 
 static void resume_trace(pid_t pid)
 {
-#if 0
-  printf("resume trace\n");
-  //
-  // TODO: Use our own board setup
-  if (setup_known_board_by_name(board_name, &board, &devices) < 0) {
-    fprintf(stderr, "setup_known_board_by_name() failed\n");
-    return;
-  }
-
-  if (do_configure_trace(board) < 0) {
-    fprintf(stderr, "do_configure_trace() failed\n");
-    return;
-  }
-
-#if DUMP_CONFIG
-  printf("dumping config with %s\n", itm ? "ITM enabled" : "No ITM");
-  do_dump_config(board, &devices, itm);
-#endif
-  cs_checkpoint();
-
-  printf("CSDEMO: trace buffer contents: %u bytes\n",
-      cs_get_buffer_unread_bytes(devices.etb));
-#endif
   start_trace(pid);
 }
 
