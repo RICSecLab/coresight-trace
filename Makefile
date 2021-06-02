@@ -12,11 +12,6 @@ LIBCSACCESS:=$(CSAL_LIB)/libcsaccess.a
 LIBCSACCUTIL:=$(CSAL_LIB)/libcsacc_util.a
 CSKNOWNBOARDS:=$(CSAL_DEMO)/$(CSAL_BUILD)-$(CSAL_ARCH)/cs_demo_known_boards.o
 
-CSD_BASE:=OpenCSD
-CSD_PLAT:=linux-arm64
-CSD_BUILD:=rel
-CSD_DECODER:=$(CSD_BASE)/decoder/tests/bin/$(CSD_PLAT)/$(CSD_BUILD)/trc_pkt_lister_s
-
 CSDEC_BASE:=coresight-decoder
 CSDEC:=$(CSDEC_BASE)/processor
 
@@ -62,9 +57,6 @@ $(CSDEC):
 
 $(TARGET): $(OBJS) $(CSKNOWNBOARDS) $(LIBCSACCESS) $(LIBCSACCUTIL)
 	$(CC) -o $@ $^
-
-$(CSD_DECODER):
-	$(MAKE) -C $(CSD_BASE)/decoder/build/linux -f makefile.dev
 
 libcsal:
 	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) NO_DIAG=1
