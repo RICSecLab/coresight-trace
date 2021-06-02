@@ -19,7 +19,6 @@
 #include "csregistration.h"
 #include "csregisters.h"
 #include "cs_util_create_snapshot.h"
-#include "cs_demo_known_boards.h"
 
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 #define PAGE_SIZE 0x1000
@@ -46,6 +45,8 @@ static int cpu = TRACE_CPU;
 static cpu_set_t affinity_mask;
 
 extern int registration_verbose;
+
+extern const struct board known_boards[];
 
 struct addr_range {
     unsigned long start;
@@ -443,9 +444,8 @@ static void start_trace(pid_t pid)
   printf("Trace range:\n");
   dump_mem_range();
 
-  // TODO: Use our own board setup
-  if (setup_known_board_by_name(board_name, &board, &devices) < 0) {
-    fprintf(stderr, "setup_known_board_by_name() failed\n");
+  if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
+    fprintf(stderr, "setup_named_board() failed\n");
     return;
   }
 

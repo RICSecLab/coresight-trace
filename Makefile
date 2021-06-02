@@ -10,7 +10,6 @@ CSAL_LIB:=$(CSAL_BASE)/lib/$(CSAL_ARCH)/$(CSAL_BUILD)
 CSAL_DEMO:=$(CSAL_BASE)/demos
 LIBCSACCESS:=$(CSAL_LIB)/libcsaccess.a
 LIBCSACCUTIL:=$(CSAL_LIB)/libcsacc_util.a
-CSKNOWNBOARDS:=$(CSAL_DEMO)/$(CSAL_BUILD)-$(CSAL_ARCH)/cs_demo_known_boards.o
 
 CSDEC_BASE:=coresight-decoder
 CSDEC:=$(CSDEC_BASE)/processor
@@ -55,13 +54,12 @@ decode: $(CSDEC) trace
 $(CSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
 
-$(TARGET): $(OBJS) $(CSKNOWNBOARDS) $(LIBCSACCESS) $(LIBCSACCUTIL)
+$(TARGET): $(OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL)
 	$(CC) -o $@ $^
 
 libcsal:
 	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) NO_DIAG=1
 
-$(CSKNOWNBOARDS): libcsal
 $(LIBCSACCESS): libcsal
 $(LIBCSACCUTIL): libcsal
 
