@@ -2,6 +2,16 @@
 
 #include "utils.h"
 
+static int get_trace_id(const char *hardware, int cpu)
+{
+  if (strcmp(hardware, "Marvell ThunderX2") == 0) {
+    return 0x10 + (cpu % 28) * 4 + cpu / 28;
+  }
+
+  // Unknown hardware name
+  return -1;
+}
+
 void dump_mem_range(struct addr_range *range, int count)
 {
   int i;
@@ -75,14 +85,16 @@ int get_mem_range(pid_t pid, struct addr_range *range, int count_max)
   return count;
 }
 
-int export_decoder_args(const char *trace_path, const char *args_path,
+int export_decoder_args(const char *hardware, int cpu,
+    const char *trace_path, const char *args_path,
     struct addr_range *range, int count)
 {
   FILE *fp;
+  int trace_id;
   int i;
   int ret;
 
-  if (!trace_path || !args_path || !range) {
+  if (!hardware || !trace_path || !args_path || !range) {
     return -1;
   }
 
@@ -92,7 +104,15 @@ int export_decoder_args(const char *trace_path, const char *args_path,
     return -1;
   }
 
+  if ((trace_id = get_trace_id(hardware, cpu)) < 0) {
+    goto exit;
+  }
+
   if ((ret = fprintf(fp, " %s", trace_path)) < 0) {
+    goto exit;
+  }
+
+  if ((ret = fprintf(fp, " 0x%x", trace_id)) < 0) {
     goto exit;
   }
 

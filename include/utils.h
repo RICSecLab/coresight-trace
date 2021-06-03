@@ -17,7 +17,8 @@ struct addr_range {
 
 void dump_mem_range(struct addr_range *range, int count);
 int get_mem_range(pid_t pid, struct addr_range *range, int count_max);
-int export_decoder_args(const char *trace_path, const char *args_path,
-    struct addr_range *range, int count);
+int export_decoder_args(const char *hardware, int cpu,
+        const char *trace_path, const char *args_path,
+            struct addr_range *range, int count);
 
 #endif /* PROC_TRACE_UTILS_H */

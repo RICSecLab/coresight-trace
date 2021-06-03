@@ -140,7 +140,8 @@ static void exit_trace(pid_t pid)
   }
   memset(trace_path, 0, sizeof(trace_path));
   snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
-  export_decoder_args(trace_path, decoder_args_path, range, range_count);
+  export_decoder_args(board_name, cpu, trace_path, decoder_args_path,
+      range, range_count);
 
   printf("Trace range:\n");
   dump_mem_range(range, range_count);
