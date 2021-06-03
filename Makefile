@@ -37,6 +37,7 @@ TARGET:=proc-trace
 
 TESTS:= \
   tests/fib \
+  tests/fib-large \
   tests/loop \
   tests/bf \
 
