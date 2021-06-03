@@ -31,6 +31,7 @@ CFLAGS:= \
   -I$(INC) \
   -I$(CSAL_INC) \
   -I$(CSAL_DEMO) \
+  -lpthread \
 
 TARGET:=proc-trace
 
@@ -66,7 +67,7 @@ $(CSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
 
 $(TARGET): $(OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL)
-	$(CC) -o $@ $^
+	$(CC) -o $@ $^ $(CFLAGS)
 
 libcsal:
 	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) NO_DIAG=1

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <assert.h>
 #include <unistd.h>
 #include <sched.h>
@@ -34,6 +35,7 @@
 const char *trace_name = "cstrace.bin";
 const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
+const float etf_ram_usage_threshold = 0.8;
 
 static struct cs_devices_t devices;
 const struct board *board;
@@ -47,6 +49,9 @@ extern const struct board known_boards[];
 
 struct addr_range range[RANGE_MAX];
 int range_count = 0;
+
+bool trace_started;
+size_t etf_ram_depth;
 
 static void start_trace(pid_t pid)
 {
@@ -174,6 +179,28 @@ static void resume_trace(pid_t pid)
   start_trace(pid);
 }
 
+static void *etb_polling(void *arg)
+{
+  pid_t pid = (pid_t)arg;
+  int rwp;
+  useconds_t polling_sleep_us = 10;
+  int ret;
+
+  while (kill(pid, 0) == 0) {
+    if (trace_started == true) {
+      rwp = cs_get_buffer_rwp(devices.etb);
+      if (rwp > (etf_ram_depth * etf_ram_usage_threshold)) {
+        printf("ETB is getting full: RWP: 0x%x, RAM size: 0x%lx\n",
+            rwp, etf_ram_depth);
+        ret = kill(pid, SIGSTOP);
+        printf("kill: %d\n",ret);
+      }
+    }
+    usleep(polling_sleep_us);
+  }
+  printf("ETB polling thread exit\n");
+}
+
 void child(char *argv[])
 {
   ptrace(PTRACE_TRACEME, 0, NULL, NULL);
@@ -184,7 +211,6 @@ void parent(pid_t pid)
 {
   int wstatus;
   bool is_first_exec;
-  bool trace_started;
   struct user_pt_regs regs;
   struct iovec iov;
   long syscall_num;
@@ -196,6 +222,9 @@ void parent(pid_t pid)
   int prot;
   int fd;
   char fd_path[PATH_MAX];
+
+  pthread_t polling_thread;
+  int ret;
 
   is_first_exec = true;
   trace_started = false;
@@ -209,8 +238,16 @@ void parent(pid_t pid)
       trace_started = true;
     }
   }
+
+  ret = pthread_create(&polling_thread, NULL, etb_polling, (void *)pid);
+  if (ret != 0) {
+    fprintf(stderr, "** Failed to create thread: %d\n", ret);
+    return;
+  }
+
+  etf_ram_depth = cs_get_buffer_size_bytes(devices.etb);
+
   ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
-  ptrace(PTRACE_CONT, pid, 0, 0);
 
   while (1) {
     waitpid(pid, &wstatus, 0);
@@ -253,11 +290,20 @@ void parent(pid_t pid)
               fprintf(stderr, "** addr_range_count: %d\n", range_count);
             }
           }
-          is_entered_mmap = false;
-        } else {
-          is_entered_mmap = true;
         }
+        is_entered_mmap = !is_entered_mmap;
       }
+    } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGSTOP) {
+      trace_started = false;
+      printf("Got SIGSTOP from polling thread\n");
+      if (cs_buffer_has_wrapped(devices.etb)) {
+        fprintf(stderr, "** WARNING: ETB full bit is set\n");
+      }
+      suspend_trace();
+
+      resume_trace(pid);
+
+      trace_started = true;
     }
     ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
   }
