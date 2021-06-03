@@ -31,7 +31,7 @@
 #define SHOW_ETM_CONFIG 0
 #define TRACE_CPU 0
 
-const char *trace_path = "cstrace.bin";
+const char *trace_name = "cstrace.bin";
 const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
 
@@ -98,6 +98,8 @@ static void start_trace(pid_t pid)
 static void exit_trace(pid_t pid)
 {
   int i;
+  char *cwd;
+  char trace_path[PATH_MAX];
 
   printf("Exit tracing PID: %d\n", pid);
 
@@ -126,10 +128,21 @@ static void exit_trace(pid_t pid)
     printf("CSDEMO: shutdown...\n");
   cs_shutdown();
 
+  cwd = getcwd(NULL, 0);
+  if (!cwd) {
+    perror("getcwd");
+    return;
+  }
+  memset(trace_path, 0, sizeof(trace_path));
+  snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
   export_decoder_args(trace_path, decoder_args_path, range, range_count);
 
   printf("Trace range:\n");
   dump_mem_range(range, range_count);
+
+  if (cwd) {
+    free(cwd);
+  }
 }
 
 static void suspend_trace(void)
