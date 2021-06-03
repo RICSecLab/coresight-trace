@@ -14,14 +14,24 @@ LIBCSACCUTIL:=$(CSAL_LIB)/libcsacc_util.a
 CSDEC_BASE:=coresight-decoder
 CSDEC:=$(CSDEC_BASE)/processor
 
+INC:=include
+
+HDRS:= \
+  $(INC)/config.h \
+  $(INC)/utils.h \
+
+OBJS:= \
+  src/config.o \
+  src/known_boards.o \
+  src/main.o \
+  src/utils.o \
+
 CFLAGS:= \
   -Wall \
-  -I$(PWD) \
+  -I$(INC) \
   -I$(CSAL_INC) \
   -I$(CSAL_DEMO) \
 
-SRCS:=$(wildcard *.c)
-OBJS:=$(SRCS:.c=.o)
 TARGET:=proc-trace
 
 TESTS:= \
@@ -65,7 +75,7 @@ $(LIBCSACCESS): libcsal
 $(LIBCSACCUTIL): libcsal
 
 clean:
-	rm -f *.o $(TARGET) $(TESTS)
+	rm -f $(OBJS) $(TARGET) $(TESTS)
 
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean ARCH=$(CSAL_ARCH) NO_DIAG=1
