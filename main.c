@@ -22,6 +22,8 @@
 
 #include "config.h"
 
+#define RANGE_MAX (ETMv4_NUM_ADDR_COMP_MAX / 2)
+
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 #define PAGE_SIZE 0x1000
 
@@ -29,6 +31,7 @@
 #define SHOW_ETM_CONFIG 0
 #define TRACE_CPU 0
 
+const char *trace_path = "cstrace.bin";
 const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
 
@@ -42,153 +45,18 @@ extern int registration_verbose;
 
 extern const struct board known_boards[];
 
-struct addr_range {
-    unsigned long start;
-    unsigned long end;
-    char path[PATH_MAX];
-} addr_range_cmps[ETMv4_NUM_ADDR_COMP_MAX / 2];
-int addr_range_count = 0;
-
-static void dump_mem_range(void)
-{
-  int i;
-
-  for (i = 0; i < addr_range_count; i++) {
-    printf("[0x%lx-0x%lx]: %s\n",
-        addr_range_cmps[i].start,
-        addr_range_cmps[i].end,
-        addr_range_cmps[i].path);
-  }
-}
-
-static int get_mem_range(pid_t pid)
-{
-  FILE *fp;
-  char maps_path[PATH_MAX];
-  char *line;
-  size_t n;
-  ssize_t readn;
-  unsigned long start_addr;
-  unsigned long end_addr;
-  char c;
-  char x;
-  int count;
-  char *p;
-
-  memset(maps_path, 0, sizeof(maps_path));
-  snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
-
-  fp = fopen(maps_path, "r");
-  if (fp == NULL) {
-    perror("fopen");
-    return -1;
-  }
-
-  line = NULL;
-  n = 0;
-  readn = 0;
-  count = 0;
-  while ((readn = getline(&line, &n, fp)) != -1) {
-    if (readn > 0 && line[readn - 1] == '\n') {
-      line[readn - 1] = '\0';
-      readn--;
-    }
-    sscanf(line, "%lx-%lx %c%c%c", &start_addr, &end_addr, &c, &c, &x);
-    if (x == 'x') {
-      if (count < ETMv4_NUM_ADDR_COMP_MAX / 2) {
-        // FIXME: The below registers an exec region with absolute path only
-        // It means vDSO is not traced.
-        for (p = line; *p != '\0' && *p != '/'; p++) {
-        }
-        if (*p == '/') {
-          strncpy(addr_range_cmps[count].path, p, PATH_MAX - 1);
-          addr_range_cmps[count].path[PATH_MAX - 1] = '\0';
-          addr_range_cmps[count].start = start_addr;
-          addr_range_cmps[count].end = end_addr;
-          count += 1;
-        }
-      } else {
-        fprintf(stderr, "** WARNING: address range [0x%lx-0x%lx] will not trace\n", start_addr, end_addr);
-      }
-    }
-  }
-
-  if (line != NULL) {
-    free(line);
-  }
-  addr_range_count = count;
-  return count;
-}
-
-static int export_decoder_args(const char *args_path)
-{
-  const char *trace_name = "cstrace.bin"; // TODO: It depends on CSAL
-  char trace_path[PATH_MAX];
-  char *cwd;
-  //const int trace_id = 0x10; // TODO: Use CPU ID to trace ID table
-  FILE *fp;
-  int i;
-  int ret;
-
-  if (args_path == NULL) {
-    return -1;
-  }
-
-  fp = fopen(args_path, "w");
-  if (fp == NULL) {
-    perror("fopen");
-    return -1;
-  }
-
-  cwd = getcwd(NULL, 0);
-  if (cwd == NULL) {
-    perror("getcwd");
-    ret = -1;
-    goto exit;
-  }
-  memset(trace_path, 0, sizeof(trace_path));
-  snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
-  if ((ret = fprintf(fp, " %s", trace_path)) < 0) {
-    goto exit;
-  }
-  if ((ret = fprintf(fp, " %d", addr_range_count)) < 0) {
-    goto exit;
-  }
-  for (i = 0; i < addr_range_count; i++) {
-    ret = fprintf(fp, " %s 0x%lx 0x%lx",
-        addr_range_cmps[i].path,
-        addr_range_cmps[i].start,
-        addr_range_cmps[i].end);
-    if (ret < 0) {
-      goto exit;
-    }
-  }
-
-  ret = 0;
-
-exit:
-  if (cwd != NULL) {
-    free(cwd);
-  }
-
-  fclose(fp);
-
-  if (ret < 0) {
-    fprintf(stderr, "** WARNING: Failed to write decoder arguments\n");
-  }
-
-  return ret;
-}
+struct addr_range range[RANGE_MAX];
+int range_count = 0;
 
 static void start_trace(pid_t pid)
 {
-  if (get_mem_range(pid) < 0) {
+  if ((range_count = get_mem_range(pid, range, RANGE_MAX)) < 0) {
     fprintf(stderr, "get_mem_range() failed\n");
     return;
   }
 
   printf("Trace range:\n");
-  dump_mem_range();
+  dump_mem_range(range, range_count);
 
   if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
     fprintf(stderr, "setup_named_board() failed\n");
@@ -206,7 +74,7 @@ static void start_trace(pid_t pid)
     }
   }
 
-  if (configure_trace(board, &devices) < 0) {
+  if (configure_trace(board, &devices, range, range_count) < 0) {
     fprintf(stderr, "** configure_trace() failed\n");
     return;
   }
@@ -258,10 +126,10 @@ static void exit_trace(pid_t pid)
     printf("CSDEMO: shutdown...\n");
   cs_shutdown();
 
-  export_decoder_args(decoder_args_path);
+  export_decoder_args(trace_path, decoder_args_path, range, range_count);
 
   printf("Trace range:\n");
-  dump_mem_range();
+  dump_mem_range(range, range_count);
 }
 
 static void suspend_trace(void)
@@ -314,7 +182,6 @@ void parent(pid_t pid)
   size_t length;
   int prot;
   int fd;
-  struct addr_range *range;
   char fd_path[PATH_MAX];
 
   is_first_exec = true;
@@ -351,28 +218,26 @@ void parent(pid_t pid)
           prot = regs.regs[2];
           fd = regs.regs[4];
           if ((prot & PROT_EXEC) && fd > 2) {
-            if (addr_range_count < ETMv4_NUM_ADDR_COMP_MAX / 2) {
-              range = &addr_range_cmps[addr_range_count];
-
+            if (range_count < RANGE_MAX) {
               suspend_trace();
               trace_started = false;
 
               memset(fd_path, 0, sizeof(fd_path));
               snprintf(fd_path, sizeof(fd_path), "/proc/%d/fd/%d", pid, fd);
-              readlink(fd_path, range->path, PATH_MAX);
+              readlink(fd_path, range[range_count].path, PATH_MAX);
 
-              range->start = (unsigned long)addr;
-              range->end = ALIGN_UP((unsigned long)addr + length, PAGE_SIZE);
-              addr_range_count += 1;
+              range[range_count].start = (unsigned long)addr;
+              range[range_count].end = ALIGN_UP((unsigned long)addr + length, PAGE_SIZE);
               printf("Added [0x%lx-0x%lx]: %s\n",
-                  range->start,
-                  range->end,
-                  range->path);
+                  range[range_count].start,
+                  range[range_count].end,
+                  range[range_count].path);
+              range_count += 1;
 
               resume_trace(pid);
               trace_started = true;
             } else {
-              fprintf(stderr, "** addr_range_count: %d\n", addr_range_count);
+              fprintf(stderr, "** addr_range_count: %d\n", range_count);
             }
           }
           is_entered_mmap = false;

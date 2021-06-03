@@ -6,13 +6,6 @@
 
 const bool return_stack = true;
 
-extern struct addr_range {
-    unsigned long start;
-    unsigned long end;
-    char path[PATH_MAX];
-} addr_range_cmps[ETMv4_NUM_ADDR_COMP_MAX / 2];
-extern int addr_range_count;
-
 #if SHOW_ETM_CONFIG
 static void show_etm_config(cs_device_t etm)
 {
@@ -34,7 +27,8 @@ static void show_etm_config(cs_device_t etm)
 static void show_etm_config(cs_device_t etm) {}
 #endif
 
-static int configure_etmv4(cs_device_t etm)
+static int configure_etmv4(cs_device_t etm, struct addr_range *range,
+    int range_count)
 {
     cs_etmv4_config_t tconfig;
     int i, error_count;
@@ -53,17 +47,17 @@ static int configure_etmv4(cs_device_t etm)
     if (return_stack)
         tconfig.configr.bits.rs = 1; /* set the return stack */
 
-    for (i = 0; i < addr_range_count; i++) {
+    for (i = 0; i < range_count; i++) {
         tconfig.addr_comps[i * 2].acvr_l
-          = addr_range_cmps[i].start & 0xFFFFFFFF;
+          = range[i].start & 0xFFFFFFFF;
         tconfig.addr_comps[i * 2].acvr_h
-          = (addr_range_cmps[i].start >> 32) & 0xFFFFFFFF;
+          = (range[i].start >> 32) & 0xFFFFFFFF;
         /* instuction address compare, all ELs, no ctxt, vmid, data, etc */
         tconfig.addr_comps[i * 2].acatr_l = 0x0;
         tconfig.addr_comps[i * 2 + 1].acvr_l
-          = addr_range_cmps[i].end & 0xFFFFFFFF;
+          = range[i].end & 0xFFFFFFFF;
         tconfig.addr_comps[i * 2 + 1].acvr_h =
-            (addr_range_cmps[i].end >> 32) & 0xFFFFFFFF;
+            (range[i].end >> 32) & 0xFFFFFFFF;
         /* instuction address compare, all ELs, no ctxt, vmid, data, etc */
         tconfig.addr_comps[i * 2 + 1].acatr_l = 0x0;
         tconfig.addr_comps_acc_mask |= (1 << (i * 2 + 1)) | (1 << (i * 2));
@@ -130,7 +124,8 @@ int init_etm(cs_device_t dev)
     return 0;
 }
 
-int configure_trace(const struct board *board, struct cs_devices_t *devices)
+int configure_trace(const struct board *board, struct cs_devices_t *devices,
+    struct addr_range *range, int range_count)
 {
     int i, r, error_count;
 
@@ -160,7 +155,7 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices)
     for (i = 0; i < board->n_cpu; ++i) {
         if (CS_ETMVERSION_MAJOR(cs_etm_get_version(devices->ptm[i])) >=
             CS_ETMVERSION_ETMv4) {
-            r = configure_etmv4(devices->ptm[i]);
+            r = configure_etmv4(devices->ptm[i], range, range_count);
         } else {
             fprintf(stderr, "** Unsupported ETM for CPU #%d\n", i);
             continue;
