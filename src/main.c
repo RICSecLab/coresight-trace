@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
-#include <assert.h>
 #include <unistd.h>
 #include <sched.h>
 #include <limits.h>
@@ -36,6 +35,7 @@ const char *trace_name = "cstrace.bin";
 const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
 const float etf_ram_usage_threshold = 0.8;
+const useconds_t polling_sleep_us = 10;
 
 static struct cs_devices_t devices;
 const struct board *board;
@@ -50,87 +50,51 @@ extern const struct board known_boards[];
 struct addr_range range[RANGE_MAX];
 int range_count = 0;
 
-bool trace_started;
+bool trace_started = false;
 size_t etf_ram_depth;
 
-static void start_trace(pid_t pid)
+static int init_trace(pid_t pid)
 {
+  int ret;
+
+  ret = -1;
+
   if ((range_count = get_mem_range(pid, range, RANGE_MAX)) < 0) {
     fprintf(stderr, "get_mem_range() failed\n");
-    return;
+    goto exit;
   }
 
-  printf("Trace range:\n");
   dump_mem_range(range, range_count);
 
   if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
     fprintf(stderr, "setup_named_board() failed\n");
-    return;
+    goto exit;
   }
 
   if (cpu >= 0) {
-    printf("Set CPU affinity: CPU #%d\n", cpu);
     CPU_ZERO(&affinity_mask);
     CPU_SET(cpu, &affinity_mask);
     if (sched_setaffinity(pid, sizeof(affinity_mask), &affinity_mask) < 0) {
       perror("sched_setaffinity");
-      cs_shutdown();
-      return;
+      goto exit;
     }
   }
 
-  if (configure_trace(board, &devices, range, range_count) < 0) {
-    fprintf(stderr, "** configure_trace() failed\n");
-    return;
+  ret = 0;
+
+exit:
+  if (ret < 0) {
+    cs_shutdown();
   }
 
-  if (enable_trace(board, &devices) < 0) {
-    fprintf(stderr, "** enable_trace() failed\n");
-    return;
-  }
-
-#if DUMP_CONFIG
-  do_dump_config(board, &devices, 0);
-#endif
-  cs_checkpoint();
-
-  printf("CSDEMO: trace buffer contents: %u bytes\n",
-      cs_get_buffer_unread_bytes(devices.etb));
-
-  printf("Start tracing PID: %d\n", pid);
+  return ret;
 }
 
-static void exit_trace(pid_t pid)
+static void fini_trace(void)
 {
-  int i;
   char *cwd;
   char trace_path[PATH_MAX];
 
-  printf("Exit tracing PID: %d\n", pid);
-
-  if (registration_verbose)
-    printf("CSDEMO: Disable trace...\n");
-  for (i = 0; i < board->n_cpu; ++i) {
-    cs_trace_disable(devices.ptm[i]);
-  }
-  cs_sink_disable(devices.etb);
-  if (devices.itm_etb != NULL) {
-    cs_sink_disable(devices.itm_etb);
-  }
-
-  printf("CSDEMO: trace buffer contents: %u bytes\n",
-      cs_get_buffer_unread_bytes(devices.etb));
-
-#if SHOW_ETM_CONFIG
-  for (i = 0; i < board->n_cpu; ++i) {
-    show_etm_config(i);
-  }
-#endif
-
-  do_fetch_trace(&devices, 0);
-
-  if (registration_verbose)
-    printf("CSDEMO: shutdown...\n");
   cs_shutdown();
 
   cwd = getcwd(NULL, 0);
@@ -143,7 +107,6 @@ static void exit_trace(pid_t pid)
   export_decoder_args(board_name, cpu, trace_path, decoder_args_path,
       range, range_count);
 
-  printf("Trace range:\n");
   dump_mem_range(range, range_count);
 
   if (cwd) {
@@ -151,55 +114,77 @@ static void exit_trace(pid_t pid)
   }
 }
 
-static void suspend_trace(void)
+static int start_trace(void)
+{
+  int ret;
+
+  ret = -1;
+
+  if (configure_trace(board, &devices, range, range_count) < 0) {
+    fprintf(stderr, "configure_trace() failed\n");
+    goto exit;
+  }
+
+  if (enable_trace(board, &devices) < 0) {
+    fprintf(stderr, "enable_trace() failed\n");
+    goto exit;
+  }
+
+#if DUMP_CONFIG
+  do_dump_config(board, &devices, 0);
+#endif
+
+  cs_checkpoint();
+
+  trace_started = true;
+  ret = 0;
+
+exit:
+  if (ret < 0) {
+    cs_shutdown();
+  }
+
+  return ret;
+}
+
+static void stop_trace(void)
 {
   int i;
 
-  if (registration_verbose)
-    printf("CSDEMO: Disable trace...\n");
   for (i = 0; i < board->n_cpu; ++i) {
     cs_trace_disable(devices.ptm[i]);
   }
   cs_sink_disable(devices.etb);
-  if (devices.itm_etb != NULL) {
-    cs_sink_disable(devices.itm_etb);
+
+#if SHOW_ETM_CONFIG
+  for (i = 0; i < board->n_cpu; ++i) {
+    show_etm_config(i);
   }
+#endif
 
-  printf("CSDEMO: trace buffer contents: %u bytes\n",
-      cs_get_buffer_unread_bytes(devices.etb));
-
-  do_fetch_trace(&devices, 0);
-
-  if (registration_verbose)
-    printf("CSDEMO: shutdown...\n");
-  cs_shutdown();
+  trace_started = false;
 }
 
-static void resume_trace(pid_t pid)
+static void fetch_trace(void)
 {
-  start_trace(pid);
+  do_fetch_trace(&devices, 0);
 }
 
 static void *etb_polling(void *arg)
 {
   pid_t pid = (pid_t)arg;
   int rwp;
-  useconds_t polling_sleep_us = 10;
   int ret;
 
   while (kill(pid, 0) == 0) {
     if (trace_started == true) {
       rwp = cs_get_buffer_rwp(devices.etb);
       if (rwp > (etf_ram_depth * etf_ram_usage_threshold)) {
-        printf("ETB is getting full: RWP: 0x%x, RAM size: 0x%lx\n",
-            rwp, etf_ram_depth);
         ret = kill(pid, SIGSTOP);
-        printf("kill: %d\n",ret);
       }
     }
     usleep(polling_sleep_us);
   }
-  printf("ETB polling thread exit\n");
 }
 
 void child(char *argv[])
@@ -211,7 +196,6 @@ void child(char *argv[])
 void parent(pid_t pid)
 {
   int wstatus;
-  bool is_first_exec;
   struct user_pt_regs regs;
   struct iovec iov;
   long syscall_num;
@@ -227,22 +211,17 @@ void parent(pid_t pid)
   pthread_t polling_thread;
   int ret;
 
-  is_first_exec = true;
   trace_started = false;
   is_entered_mmap = false;
 
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
-    if (is_first_exec == true) {
-      is_first_exec = false;
-      start_trace(pid);
-      trace_started = true;
-    }
+    init_trace(pid);
+    start_trace();
   }
 
   ret = pthread_create(&polling_thread, NULL, etb_polling, (void *)pid);
   if (ret != 0) {
-    fprintf(stderr, "** Failed to create thread: %d\n", ret);
     return;
   }
 
@@ -253,8 +232,9 @@ void parent(pid_t pid)
   while (1) {
     waitpid(pid, &wstatus, 0);
     if (WIFEXITED(wstatus) && trace_started == true) {
-      exit_trace(pid);
-      trace_started = false;
+      stop_trace();
+      fetch_trace();
+      fini_trace();
       return;
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGTRAP) {
       iov.iov_base = &regs;
@@ -270,8 +250,8 @@ void parent(pid_t pid)
           fd = regs.regs[4];
           if ((prot & PROT_EXEC) && fd > 2) {
             if (range_count < RANGE_MAX) {
-              suspend_trace();
-              trace_started = false;
+              stop_trace();
+              fetch_trace();
 
               memset(fd_path, 0, sizeof(fd_path));
               snprintf(fd_path, sizeof(fd_path), "/proc/%d/fd/%d", pid, fd);
@@ -285,8 +265,7 @@ void parent(pid_t pid)
                   range[range_count].path);
               range_count += 1;
 
-              resume_trace(pid);
-              trace_started = true;
+              start_trace();
             } else {
               fprintf(stderr, "** addr_range_count: %d\n", range_count);
             }
@@ -296,15 +275,12 @@ void parent(pid_t pid)
       }
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGSTOP) {
       trace_started = false;
-      printf("Got SIGSTOP from polling thread\n");
       if (cs_buffer_has_wrapped(devices.etb)) {
         fprintf(stderr, "** WARNING: ETB full bit is set\n");
       }
-      suspend_trace();
-
-      resume_trace(pid);
-
-      trace_started = true;
+      stop_trace();
+      fetch_trace();
+      start_trace();
     }
     ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
   }
@@ -312,12 +288,12 @@ void parent(pid_t pid)
 
 int main(int argc, char *argv[])
 {
+  pid_t pid;
+
   if (argc < 2) {
     fprintf(stderr, "Usage: %s EXE\n", argv[0]);
     exit(EXIT_SUCCESS);
   }
-
-  pid_t pid;
 
   registration_verbose = 0;
 
@@ -335,4 +311,6 @@ int main(int argc, char *argv[])
       wait(NULL);
       break;
   }
+
+  return 0;
 }
