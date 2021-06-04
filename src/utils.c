@@ -21,7 +21,7 @@ void dump_mem_range(struct addr_range *range, int count)
   }
 }
 
-int get_mem_range(pid_t pid, struct addr_range *range, int count_max)
+int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
 {
   FILE *fp;
   char maps_path[PATH_MAX];

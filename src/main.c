@@ -14,6 +14,7 @@
 #include <sys/uio.h>
 #include <linux/elf.h>
 #include <asm/ptrace.h>
+#include <asm/unistd.h>
 
 #include "csaccess.h"
 #include "csregistration.h"
@@ -51,7 +52,15 @@ struct addr_range range[RANGE_MAX];
 int range_count = 0;
 
 bool trace_started = false;
-size_t etf_ram_depth;
+
+struct mmap_params {
+  void *addr;
+  size_t length;
+  int prot;
+  int flags;
+  int fd;
+  off_t offset;
+};
 
 static int init_trace(pid_t pid)
 {
@@ -59,8 +68,8 @@ static int init_trace(pid_t pid)
 
   ret = -1;
 
-  if ((range_count = get_mem_range(pid, range, RANGE_MAX)) < 0) {
-    fprintf(stderr, "get_mem_range() failed\n");
+  if ((range_count = setup_mem_range(pid, range, RANGE_MAX)) < 0) {
+    fprintf(stderr, "setup_mem_range() failed\n");
     goto exit;
   }
 
@@ -72,6 +81,7 @@ static int init_trace(pid_t pid)
   }
 
   if (cpu >= 0) {
+    // TODO: Support CPU hotplug
     CPU_ZERO(&affinity_mask);
     CPU_SET(cpu, &affinity_mask);
     if (sched_setaffinity(pid, sizeof(affinity_mask), &affinity_mask) < 0) {
@@ -170,21 +180,95 @@ static void fetch_trace(void)
   do_fetch_trace(&devices, 0);
 }
 
+static void read_pid_fd_path(pid_t pid, int fd, char *buf, size_t size)
+{
+  char fd_path[PATH_MAX];
+
+  memset(fd_path, 0, sizeof(fd_path));
+  snprintf(fd_path, sizeof(fd_path), "/proc/%d/fd/%d", pid, fd);
+  readlink(fd_path, buf, size);
+}
+
+static int get_mmap_params(pid_t pid, struct mmap_params *params)
+{
+  struct user_pt_regs regs;
+  struct iovec iov;
+  long syscall;
+
+  if (!params) {
+    return -1;
+  }
+
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  if (ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov) < 0) {
+    return -1;
+  }
+
+  syscall = regs.regs[8];
+  if (syscall != __NR_mmap) {
+    return -1;
+  }
+
+  params->addr = (void *)regs.regs[0];
+  params->length = (size_t)regs.regs[1];
+  params->prot = (int)regs.regs[2];
+  params->flags = (int)regs.regs[3];
+  params->fd = (int)regs.regs[4];
+  params->offset = (off_t)regs.regs[5];
+
+  return 0;
+}
+
+static struct addr_range *append_mmap_exec_region(pid_t pid,
+    struct mmap_params *params)
+{
+  struct addr_range *r;
+
+  if (!params) {
+    return NULL;
+  }
+
+  if (!(params->prot & PROT_EXEC) || params->fd < 3) {
+    return NULL;
+  }
+
+  if (range_count >= RANGE_MAX) {
+    return NULL;
+  }
+
+  r = &range[range_count];
+
+  r->start = (unsigned long)params->addr;
+  r->end = ALIGN_UP(r->start + params->length, PAGE_SIZE);
+  read_pid_fd_path(pid, params->fd, r->path, PATH_MAX);
+  range_count++;
+
+  return r;
+}
+
 static void *etb_polling(void *arg)
 {
-  pid_t pid = (pid_t)arg;
+  pid_t pid = *(pid_t *)arg;
+  size_t etf_ram_depth;
   int rwp;
   int ret;
+
+  etf_ram_depth = cs_get_buffer_size_bytes(devices.etb);
 
   while (kill(pid, 0) == 0) {
     if (trace_started == true) {
       rwp = cs_get_buffer_rwp(devices.etb);
       if (rwp > (etf_ram_depth * etf_ram_usage_threshold)) {
         ret = kill(pid, SIGSTOP);
+        if (ret < 0) {
+          fprintf(stderr, "** kill failed\n");
+        }
       }
     }
     usleep(polling_sleep_us);
   }
+  return NULL;
 }
 
 void child(char *argv[])
@@ -196,17 +280,8 @@ void child(char *argv[])
 void parent(pid_t pid)
 {
   int wstatus;
-  struct user_pt_regs regs;
-  struct iovec iov;
-  long syscall_num;
+  struct mmap_params mmap_params;
   bool is_entered_mmap;
-  const long mmap_syscall = 222;
-
-  void *addr;
-  size_t length;
-  int prot;
-  int fd;
-  char fd_path[PATH_MAX];
 
   pthread_t polling_thread;
   int ret;
@@ -220,16 +295,13 @@ void parent(pid_t pid)
     start_trace();
   }
 
-  ret = pthread_create(&polling_thread, NULL, etb_polling, (void *)pid);
+  ret = pthread_create(&polling_thread, NULL, etb_polling, &pid);
   if (ret != 0) {
     return;
   }
 
-  etf_ram_depth = cs_get_buffer_size_bytes(devices.etb);
-
-  ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
-
   while (1) {
+    ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
     waitpid(pid, &wstatus, 0);
     if (WIFEXITED(wstatus) && trace_started == true) {
       stop_trace();
@@ -237,44 +309,18 @@ void parent(pid_t pid)
       fini_trace();
       return;
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGTRAP) {
-      iov.iov_base = &regs;
-      iov.iov_len = sizeof(regs);
-      ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov);
-      syscall_num = regs.regs[8];
       // TODO: It should support mprotect
-      if (syscall_num == mmap_syscall) {
-        if (is_entered_mmap == true) {
-          addr = (void *)regs.regs[0];
-          length = regs.regs[1];
-          prot = regs.regs[2];
-          fd = regs.regs[4];
-          if ((prot & PROT_EXEC) && fd > 2) {
-            if (range_count < RANGE_MAX) {
-              stop_trace();
-              fetch_trace();
-
-              memset(fd_path, 0, sizeof(fd_path));
-              snprintf(fd_path, sizeof(fd_path), "/proc/%d/fd/%d", pid, fd);
-              readlink(fd_path, range[range_count].path, PATH_MAX);
-
-              range[range_count].start = (unsigned long)addr;
-              range[range_count].end = ALIGN_UP((unsigned long)addr + length, PAGE_SIZE);
-              printf("Added [0x%lx-0x%lx]: %s\n",
-                  range[range_count].start,
-                  range[range_count].end,
-                  range[range_count].path);
-              range_count += 1;
-
-              start_trace();
-            } else {
-              fprintf(stderr, "** addr_range_count: %d\n", range_count);
-            }
-          }
+      if (get_mmap_params(pid, &mmap_params) < 0) {
+        // Not mmap syscall. Do nothing
+      } else {
+        if (is_entered_mmap && append_mmap_exec_region(pid, &mmap_params)) {
+          stop_trace();
+          fetch_trace();
+          start_trace();
         }
         is_entered_mmap = !is_entered_mmap;
       }
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGSTOP) {
-      trace_started = false;
       if (cs_buffer_has_wrapped(devices.etb)) {
         fprintf(stderr, "** WARNING: ETB full bit is set\n");
       }
@@ -282,7 +328,6 @@ void parent(pid_t pid)
       fetch_trace();
       start_trace();
     }
-    ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
   }
 }
 
