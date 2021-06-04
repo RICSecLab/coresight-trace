@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdbool.h>
@@ -7,11 +9,14 @@
 #include <unistd.h>
 #include <sched.h>
 #include <limits.h>
+
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#include <sys/sysinfo.h>
+
 #include <linux/elf.h>
 #include <asm/ptrace.h>
 #include <asm/unistd.h>
@@ -28,30 +33,25 @@
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 #define PAGE_SIZE 0x1000
 
-#define DUMP_CONFIG 1
 #define SHOW_ETM_CONFIG 0
+#define DUMP_CONFIG 0
 #define TRACE_CPU 0
 
 const char *trace_name = "cstrace.bin";
 const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
-const float etf_ram_usage_threshold = 0.8;
-const useconds_t polling_sleep_us = 10;
 
+static const struct board *board;
 static struct cs_devices_t devices;
-const struct board *board;
-
 static int cpu = TRACE_CPU;
-static cpu_set_t affinity_mask;
-
-extern int registration_verbose;
+static bool trace_started = false;
+static float etf_ram_usage_threshold = 0.8;
+static useconds_t polling_sleep_us = 10;
+static int range_count = 0;
+static struct addr_range range[RANGE_MAX];
 
 extern const struct board known_boards[];
-
-struct addr_range range[RANGE_MAX];
-int range_count = 0;
-
-bool trace_started = false;
+extern int registration_verbose;
 
 struct mmap_params {
   void *addr;
@@ -65,6 +65,9 @@ struct mmap_params {
 static int init_trace(pid_t pid)
 {
   int ret;
+  int nprocs;
+  cpu_set_t *cpu_set;
+  size_t setsize;
 
   ret = -1;
 
@@ -73,26 +76,32 @@ static int init_trace(pid_t pid)
     goto exit;
   }
 
-  dump_mem_range(range, range_count);
-
   if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
     fprintf(stderr, "setup_named_board() failed\n");
     goto exit;
   }
 
-  if (cpu >= 0) {
-    // TODO: Support CPU hotplug
-    CPU_ZERO(&affinity_mask);
-    CPU_SET(cpu, &affinity_mask);
-    if (sched_setaffinity(pid, sizeof(affinity_mask), &affinity_mask) < 0) {
-      perror("sched_setaffinity");
-      goto exit;
-    }
+  nprocs = get_nprocs();
+  cpu_set = CPU_ALLOC(nprocs);
+  if (!cpu_set) {
+    perror("CPU_ALLOC");
+    goto exit;
+  }
+  setsize = CPU_ALLOC_SIZE(nprocs);
+  CPU_ZERO_S(setsize, cpu_set);
+  CPU_SET_S(cpu, setsize,  cpu_set);
+  if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
+    perror("sched_setaffinity");
+    goto exit;
   }
 
   ret = 0;
 
 exit:
+  if (cpu_set) {
+    CPU_FREE(cpu_set);
+  }
+
   if (ret < 0) {
     cs_shutdown();
   }
@@ -117,7 +126,9 @@ static void fini_trace(void)
   export_decoder_args(board_name, cpu, trace_path, decoder_args_path,
       range, range_count);
 
-  dump_mem_range(range, range_count);
+#if DUMP_CONFIG
+  dump_mem_range(stderr, range, range_count);
+#endif
 
   if (cwd) {
     free(cwd);
@@ -262,7 +273,7 @@ static void *etb_polling(void *arg)
       if (rwp > (etf_ram_depth * etf_ram_usage_threshold)) {
         ret = kill(pid, SIGSTOP);
         if (ret < 0) {
-          fprintf(stderr, "** kill failed\n");
+          fprintf(stderr, "kill() failed\n");
         }
       }
     }
@@ -322,7 +333,7 @@ void parent(pid_t pid)
       }
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGSTOP) {
       if (cs_buffer_has_wrapped(devices.etb)) {
-        fprintf(stderr, "** WARNING: ETB full bit is set\n");
+        fprintf(stderr, "WARNING: ETB full bit is set\n");
       }
       stop_trace();
       fetch_trace();
@@ -331,21 +342,53 @@ void parent(pid_t pid)
   }
 }
 
+static void usage(char *argv0)
+{
+  fprintf(stderr, "Usage: %s [FLAGS] [--] EXE [ARGS]\n", argv0);
+}
+
 int main(int argc, char *argv[])
 {
+  char **argvp;
   pid_t pid;
+  int i;
+  float f;
+  int n;
+  char junk;
 
   if (argc < 2) {
-    fprintf(stderr, "Usage: %s EXE\n", argv[0]);
+    usage(argv[0]);
     exit(EXIT_SUCCESS);
   }
 
+  argvp = &argv[1];
   registration_verbose = 0;
+
+  for (i = 1; i < argc; i++) {
+    if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
+      cpu = n;
+    } else if (sscanf(argv[i], "--etf-th=%f%c", &f, &junk) == 1) {
+      etf_ram_usage_threshold = f;
+    } else if (sscanf(argv[i], "--sleep-us=%d%c", &n, &junk) == 1) {
+      polling_sleep_us = n;
+    } else if (sscanf(argv[i], "--cs-verbose=%d%c", &n, &junk) == 1) {
+      registration_verbose = n;
+    } else if (!strcmp(argv[i], "--help")) {
+      usage(argv[0]);
+      exit(EXIT_SUCCESS);
+    } else if (!strcmp(argv[i], "--") && i + 1 < argc) {
+      argvp = &argv[++i];
+      break;
+    } else if (argc > 2 && i + 1 >= argc) {
+      fprintf(stderr, "Invalid option '%s'\n", argv[i]);
+      exit(EXIT_FAILURE);
+    }
+  }
 
   pid = fork();
   switch (pid) {
     case 0:
-      child(&argv[1]);
+      child(argvp);
       break;
     case -1:
       perror("fork");

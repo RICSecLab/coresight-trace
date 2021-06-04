@@ -12,12 +12,12 @@ static int get_trace_id(const char *hardware, int cpu)
   return -1;
 }
 
-void dump_mem_range(struct addr_range *range, int count)
+void dump_mem_range(FILE *stream, struct addr_range *range, int count)
 {
   int i;
 
   for (i = 0; i < count; i++) {
-    printf("[0x%lx-0x%lx]: %s\n", range[i].start, range[i].end, range[i].path);
+    fprintf(stream, "[0x%lx-0x%lx]: %s\n", range[i].start, range[i].end, range[i].path);
   }
 }
 
@@ -60,7 +60,7 @@ int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
       continue;
     }
     if (i >= count_max) {
-      fprintf(stderr, "** WARNING: [0x%lx-0x%lx] will not trace\n", start, end);
+      fprintf(stderr, "WARNING: [0x%lx-0x%lx] will not trace\n", start, end);
       continue;
     }
     // FIXME: The below registers an exec region with absolute path only
@@ -135,7 +135,7 @@ exit:
   fclose(fp);
 
   if (ret < 0) {
-    fprintf(stderr, "** WARNING: Failed to write decoder arguments\n");
+    fprintf(stderr, "Failed to write decoder arguments\n");
   }
 
   return ret;

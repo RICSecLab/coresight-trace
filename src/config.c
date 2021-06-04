@@ -6,9 +6,9 @@
 
 const bool return_stack = true;
 
-#if SHOW_ETM_CONFIG
 static void show_etm_config(cs_device_t etm)
 {
+#if SHOW_ETM_CONFIG
     cs_etmv4_config_t t4config;	/* ETMv4 config */
     void *p_config = 0;
 
@@ -22,10 +22,8 @@ static void show_etm_config(cs_device_t etm)
     t4config.flags = CS_ETMC_ALL;
     cs_etm_config_get_ex(etm, p_config);
     cs_etm_config_print_ex(etm, p_config);
-}
-#else
-static void show_etm_config(cs_device_t etm) {}
 #endif
+}
 
 static int configure_etmv4(cs_device_t etm, struct addr_range *range,
     int range_count)
@@ -140,7 +138,7 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
     for (i = 0; i < board->n_cpu; ++i) {
         devices->ptm[i] = cs_cpu_get_device(i, CS_DEVCLASS_SOURCE);
         if (devices->ptm[i] == CS_ERRDESC) {
-            fprintf(stderr, "** Failed to get trace source for CPU #%d\n", i);
+            fprintf(stderr, "Failed to get trace source for CPU #%d\n", i);
             return -1;
         }
         if (cs_set_trace_source_id(devices->ptm[i], 0x10 + i) < 0) {
@@ -157,7 +155,7 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
             CS_ETMVERSION_ETMv4) {
             r = configure_etmv4(devices->ptm[i], range, range_count);
         } else {
-            fprintf(stderr, "** Unsupported ETM for CPU #%d\n", i);
+            fprintf(stderr, "Unsupported ETM for CPU #%d\n", i);
             continue;
         }
         if (r != 0)
@@ -182,7 +180,7 @@ int enable_trace(const struct board *board, struct cs_devices_t *devices)
   }
 
   if (cs_sink_enable(devices->etb) != 0) {
-    fprintf(stderr, "** Failed to enable ETB\n");
+    fprintf(stderr, "Failed to enable ETB\n");
     return -1;
   }
 
