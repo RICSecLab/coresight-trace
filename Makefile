@@ -55,6 +55,9 @@ BF_CODE?=$(BF_HELLO)
 
 all: $(TARGET) $(TESTS)
 
+decode: $(CSDEC) trace
+	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
+
 trace-bf: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
@@ -65,8 +68,10 @@ trace: $(TARGET) $(TESTS)
 	cd $(DIR) && \
 	sudo $(realpath $(TARGET)) $(realpath $(TRACEE))
 
-decode: $(CSDEC) trace
-	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
+debug: $(TARGET) $(TESTS)
+	mkdir -p $(DIR) && \
+	cd $(DIR) && \
+	sudo gdb --args $(realpath $(TARGET)) $(realpath $(TRACEE))
 
 $(CSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
@@ -86,4 +91,4 @@ clean:
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean ARCH=$(CSAL_ARCH) NO_DIAG=1
 
-.PHONY: all trace-bf trace decode libcsal clean dist-clean
+.PHONY: all trace-bf trace debug decode libcsal clean dist-clean
