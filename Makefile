@@ -33,6 +33,10 @@ CFLAGS:= \
   -I$(CSAL_DEMO) \
   -lpthread \
 
+ifneq ($(strip $(DEBUG)),)
+  CFLAGS+=-g -O0
+endif
+
 TARGET:=proc-trace
 
 TESTS:= \
