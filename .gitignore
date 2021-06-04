@@ -6,4 +6,5 @@ proc-trace
 *.ini
 tests/bf
 tests/fib
+tests/fib-large
 tests/loop
