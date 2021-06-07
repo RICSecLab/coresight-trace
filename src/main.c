@@ -41,6 +41,8 @@ const char *trace_name = "cstrace.bin";
 const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
 
+int etb_stop_on_flush = 1;
+
 static const struct board *board;
 static struct cs_devices_t devices;
 static int trace_cpu = DEFAULT_TRACE_CPU;
@@ -172,6 +174,10 @@ exit:
 static void stop_trace(void)
 {
   int i;
+
+  if (etb_stop_on_flush > 0) {
+    cs_etb_flush_and_wait_stop(&devices);
+  }
 
   for (i = 0; i < board->n_cpu; ++i) {
     cs_trace_disable(devices.ptm[i]);
@@ -372,6 +378,9 @@ int main(int argc, char *argv[])
   for (i = 1; i < argc; i++) {
     if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
       trace_cpu = n;
+    } else if (sscanf(argv[i], "--etf-stop-on-flush=%d%c", &n, &junk) == 1
+        && (n == 0 || n == 1)) {
+      etb_stop_on_flush = n;
     } else if (sscanf(argv[i], "--etf-threshold=%f%c", &f, &junk) == 1
         && (0 < f && f < 1)) {
       etf_ram_usage_threshold = f;

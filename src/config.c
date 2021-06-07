@@ -4,7 +4,22 @@
 
 const bool return_stack = true;
 
+extern int etb_stop_on_flush;
 extern int registration_verbose;
+
+void cs_etb_flush_and_wait_stop(struct cs_devices_t *devices)
+{
+  unsigned int ffcr_val, ffsr_val;
+  ffcr_val = cs_device_read(devices->etb, CS_ETB_FLFMT_CTRL);
+  ffcr_val |= CS_ETB_FLFMT_CTRL_FOnMan;
+  cs_device_write(devices->etb, CS_ETB_FLFMT_CTRL, ffcr_val);
+  if (cs_device_wait(devices->etb, CS_ETB_FLFMT_STATUS,
+        CS_ETB_FLFMT_STATUS_FtStopped, CS_REG_WAITBITS_ALL_1, 0, &ffsr_val)
+      == 0) {
+  } else {
+    fprintf(stderr, "ETB collection not stopped on flush on trigger. FFSR: 0x%08x\n", ffsr_val);
+  }
+}
 
 void show_etm_config(cs_device_t etm)
 {
@@ -159,6 +174,15 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
         }
         if (r != 0)
             return r;
+    }
+
+    unsigned int ffcr_val;
+    if (etb_stop_on_flush) {
+        ffcr_val = cs_device_read(devices->etb, CS_ETB_FLFMT_CTRL);
+        ffcr_val |= CS_ETB_FLFMT_CTRL_StopFl;
+        if (cs_device_write(devices->etb, CS_ETB_FLFMT_CTRL, ffcr_val) != 0) {
+            fprintf(stderr, "Failed to set stop on flush\n");
+        }
     }
 
     error_count = cs_error_count();
