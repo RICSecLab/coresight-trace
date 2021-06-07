@@ -33,8 +33,6 @@
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 #define PAGE_SIZE 0x1000
 
-#define SHOW_ETM_CONFIG 0
-#define DUMP_CONFIG 0
 #define DEFAULT_TRACE_CPU 0
 
 const char *trace_name = "cstrace.bin";
@@ -47,6 +45,7 @@ static int trace_cpu = DEFAULT_TRACE_CPU;
 static bool trace_started = false;
 static float etf_ram_usage_threshold = 0.8;
 static useconds_t polling_sleep_us = 10;
+static int export_config = 0;
 static int range_count = 0;
 static struct addr_range range[RANGE_MAX];
 
@@ -126,9 +125,9 @@ static void fini_trace(void)
   export_decoder_args(board_name, trace_cpu, trace_path, decoder_args_path,
       range, range_count);
 
-#if DUMP_CONFIG
-  dump_mem_range(stderr, range, range_count);
-#endif
+  if (registration_verbose > 0) {
+    dump_mem_range(stderr, range, range_count);
+  }
 
   if (cwd) {
     free(cwd);
@@ -151,9 +150,9 @@ static int start_trace(void)
     goto exit;
   }
 
-#if DUMP_CONFIG
-  do_dump_config(board, &devices, 0);
-#endif
+  if (export_config > 0) {
+    do_dump_config(board, &devices, 0);
+  }
 
   cs_checkpoint();
 
@@ -177,11 +176,11 @@ static void stop_trace(void)
   }
   cs_sink_disable(devices.etb);
 
-#if SHOW_ETM_CONFIG
-  for (i = 0; i < board->n_cpu; ++i) {
-    show_etm_config(i);
+  if (registration_verbose > 1) {
+    for (i = 0; i < board->n_cpu; ++i) {
+      show_etm_config(devices.ptm[i]);
+    }
   }
-#endif
 
   trace_started = false;
 }
@@ -356,22 +355,31 @@ int main(int argc, char *argv[])
   int n;
   char junk;
 
+  i = 1;
+  argvp = NULL;
+  registration_verbose = 0;
+
   if (argc < 2) {
     usage(argv[0]);
     exit(EXIT_SUCCESS);
+  } else if (argc == 2) {
+    argvp = &argv[1];
+    i++;
   }
-
-  argvp = &argv[1];
-  registration_verbose = 0;
 
   for (i = 1; i < argc; i++) {
     if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
       trace_cpu = n;
-    } else if (sscanf(argv[i], "--etf-th=%f%c", &f, &junk) == 1) {
+    } else if (sscanf(argv[i], "--etf-threshold=%f%c", &f, &junk) == 1
+        && (0 < f && f < 1)) {
       etf_ram_usage_threshold = f;
     } else if (sscanf(argv[i], "--sleep-us=%d%c", &n, &junk) == 1) {
       polling_sleep_us = n;
-    } else if (sscanf(argv[i], "--cs-verbose=%d%c", &n, &junk) == 1) {
+    } else if (sscanf(argv[i], "--export-config=%d%c", &n, &junk) == 1
+        && (n == 0 || n == 1)) {
+      export_config = n;
+    } else if (sscanf(argv[i], "--verbose=%d%c", &n, &junk) == 1
+        && (n >= 0)) {
       registration_verbose = n;
     } else if (!strcmp(argv[i], "--help")) {
       usage(argv[0]);
@@ -383,6 +391,11 @@ int main(int argc, char *argv[])
       fprintf(stderr, "Invalid option '%s'\n", argv[i]);
       exit(EXIT_FAILURE);
     }
+  }
+
+  if (!argvp) {
+    usage(argv[0]);
+    exit(EXIT_FAILURE);
   }
 
   pid = fork();
