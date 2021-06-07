@@ -18,6 +18,7 @@
 #define SHOW_ETM_CONFIG 0
 
 int init_etm(cs_device_t dev);
+void show_etm_config(cs_device_t etm);
 int configure_trace(const struct board *board, struct cs_devices_t *devices,
     struct addr_range *range, int range_count);
 int enable_trace(const struct board *board, struct cs_devices_t *devices);

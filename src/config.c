@@ -2,13 +2,12 @@
 
 #include "config.h"
 
-#define SHOW_ETM_CONFIG 0
-
 const bool return_stack = true;
 
-static void show_etm_config(cs_device_t etm)
+extern int registration_verbose;
+
+void show_etm_config(cs_device_t etm)
 {
-#if SHOW_ETM_CONFIG
     cs_etmv4_config_t t4config;	/* ETMv4 config */
     void *p_config = 0;
 
@@ -18,11 +17,9 @@ static void show_etm_config(cs_device_t etm)
       return;
 
     cs_etm_config_init_ex(etm, p_config);
-    tconfig.flags = CS_ETMC_ALL;
     t4config.flags = CS_ETMC_ALL;
     cs_etm_config_get_ex(etm, p_config);
     cs_etm_config_print_ex(etm, p_config);
-#endif
 }
 
 static int configure_etmv4(cs_device_t etm, struct addr_range *range,
@@ -69,8 +66,10 @@ static int configure_etmv4(cs_device_t etm, struct addr_range *range,
 
     cs_etm_config_put_ex(etm, &tconfig);
 
-    /* Show the resulting configuration */
-    show_etm_config(etm);
+    if (registration_verbose > 0) {
+        /* Show the resulting configuration */
+        show_etm_config(etm);
+    }
 
     error_count = cs_error_count();
     if (error_count > 0) {
