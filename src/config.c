@@ -62,14 +62,24 @@ static int configure_etmv4(cs_device_t etm, struct addr_range *range,
           = range[i].start & 0xFFFFFFFF;
         tconfig.addr_comps[i * 2].acvr_h
           = (range[i].start >> 32) & 0xFFFFFFFF;
-        /* instuction address compare, all ELs, no ctxt, vmid, data, etc */
-        tconfig.addr_comps[i * 2].acatr_l = 0x0;
+        /* instuction address compare, NS EL0 only, no ctxt, vmid, data, etc */
+        tconfig.addr_comps[i * 2].acatr_l
+          = CS_ETMV4_ACATR_ExEL0_S
+          | CS_ETMV4_ACATR_ExEL1_S
+          | CS_ETMV4_ACATR_ExEL2_S
+          | CS_ETMV4_ACATR_ExEL1_NS
+          | CS_ETMV4_ACATR_ExEL2_NS;
         tconfig.addr_comps[i * 2 + 1].acvr_l
           = range[i].end & 0xFFFFFFFF;
-        tconfig.addr_comps[i * 2 + 1].acvr_h =
-            (range[i].end >> 32) & 0xFFFFFFFF;
-        /* instuction address compare, all ELs, no ctxt, vmid, data, etc */
-        tconfig.addr_comps[i * 2 + 1].acatr_l = 0x0;
+        tconfig.addr_comps[i * 2 + 1].acvr_h
+          = (range[i].end >> 32) & 0xFFFFFFFF;
+        /* instuction address compare, NS EL0 only, no ctxt, vmid, data, etc */
+        tconfig.addr_comps[i * 2 + 1].acatr_l
+          = CS_ETMV4_ACATR_ExEL0_S
+          | CS_ETMV4_ACATR_ExEL1_S
+          | CS_ETMV4_ACATR_ExEL2_S
+          | CS_ETMV4_ACATR_ExEL1_NS
+          | CS_ETMV4_ACATR_ExEL2_NS;
         tconfig.addr_comps_acc_mask |= (1 << (i * 2 + 1)) | (1 << (i * 2));
         /* program the address comp pair i for include */
         tconfig.viiectlr |= 1 << i;
