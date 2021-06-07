@@ -35,7 +35,7 @@
 
 #define SHOW_ETM_CONFIG 0
 #define DUMP_CONFIG 0
-#define TRACE_CPU 0
+#define DEFAULT_TRACE_CPU 0
 
 const char *trace_name = "cstrace.bin";
 const char *decoder_args_path = "decoderargs.txt";
@@ -43,7 +43,7 @@ const char *board_name = "Marvell ThunderX2";
 
 static const struct board *board;
 static struct cs_devices_t devices;
-static int cpu = TRACE_CPU;
+static int trace_cpu = DEFAULT_TRACE_CPU;
 static bool trace_started = false;
 static float etf_ram_usage_threshold = 0.8;
 static useconds_t polling_sleep_us = 10;
@@ -89,7 +89,7 @@ static int init_trace(pid_t pid)
   }
   setsize = CPU_ALLOC_SIZE(nprocs);
   CPU_ZERO_S(setsize, cpu_set);
-  CPU_SET_S(cpu, setsize,  cpu_set);
+  CPU_SET_S(trace_cpu, setsize,  cpu_set);
   if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
     perror("sched_setaffinity");
     goto exit;
@@ -123,7 +123,7 @@ static void fini_trace(void)
   }
   memset(trace_path, 0, sizeof(trace_path));
   snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
-  export_decoder_args(board_name, cpu, trace_path, decoder_args_path,
+  export_decoder_args(board_name, trace_cpu, trace_path, decoder_args_path,
       range, range_count);
 
 #if DUMP_CONFIG
@@ -366,7 +366,7 @@ int main(int argc, char *argv[])
 
   for (i = 1; i < argc; i++) {
     if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
-      cpu = n;
+      trace_cpu = n;
     } else if (sscanf(argv[i], "--etf-th=%f%c", &f, &junk) == 1) {
       etf_ram_usage_threshold = f;
     } else if (sscanf(argv[i], "--sleep-us=%d%c", &n, &junk) == 1) {
