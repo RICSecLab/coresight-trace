@@ -30,7 +30,7 @@
 
 #include "config.h"
 
-#define RANGE_MAX (ETMv4_NUM_ADDR_COMP_MAX / 2)
+#define RANGE_MAX (32)
 
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 #define PAGE_SIZE 0x1000
@@ -42,6 +42,7 @@ const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
 
 int etb_stop_on_flush = 1;
+pid_t trace_pid = 0;
 
 static const struct board *board;
 static struct cs_devices_t devices;
@@ -74,6 +75,7 @@ static int init_trace(pid_t pid)
 
   ret = -1;
 
+  trace_pid = pid;
   if ((range_count = setup_mem_range(pid, range, RANGE_MAX)) < 0) {
     fprintf(stderr, "setup_mem_range() failed\n");
     goto exit;
@@ -331,10 +333,8 @@ void parent(pid_t pid)
       if (get_mmap_params(pid, &mmap_params) < 0) {
         // Not mmap syscall. Do nothing
       } else {
-        if (is_entered_mmap && append_mmap_exec_region(pid, &mmap_params)) {
-          stop_trace();
-          fetch_trace();
-          start_trace();
+        if (is_entered_mmap) {
+          append_mmap_exec_region(pid, &mmap_params);
         }
         is_entered_mmap = !is_entered_mmap;
       }
