@@ -62,53 +62,6 @@ static void set_etmv4_addr_range(struct addr_range *range,
     addr_comp[1].acatr_l = acc_type;
 }
 
-static int configure_etmv4_addr_range(cs_device_t etm,
-    struct addr_range *range, int range_count)
-{
-    cs_etmv4_config_t tconfig;
-    int i, error_count;
-
-    /* default settings are trace everything - already set. */
-    cs_etm_config_init_ex(etm, &tconfig);
-    tconfig.flags =
-        CS_ETMC_TRACE_ENABLE | CS_ETMC_CONFIG | CS_ETMC_EVENTSELECT;
-    cs_etm_config_get_ex(etm, &tconfig);
-
-    if (tconfig.scv4->idr2.bits.vmidsize > 0)
-        tconfig.configr.bits.vmid = 1;	/* VMID trace enable */
-    if (tconfig.scv4->idr2.bits.cidsize > 0)
-        tconfig.configr.bits.cid = 1;	/* context ID trace enable. */
-
-    if (return_stack)
-        tconfig.configr.bits.rs = 1; /* set the return stack */
-
-    for (i = 0; i < range_count; i++) {
-        set_etmv4_addr_range(&range[i], &tconfig.addr_comps[i * 2], 0);
-        tconfig.addr_comps_acc_mask |= 0x3 << (i * 2);
-        /* program the address comp pair i for include */
-        tconfig.viiectlr |= 1 << i;
-    }
-
-    /* mark the config structure to program the above registers on 'put' */
-    tconfig.flags |= CS_ETMC_ADDR_COMP;
-    tconfig.syncpr = 0xc;	/* 4096 bytes per sync */
-
-    cs_etm_config_put_ex(etm, &tconfig);
-
-    if (registration_verbose > 0) {
-        /* Show the resulting configuration */
-        show_etm_config(etm);
-    }
-
-    error_count = cs_error_count();
-    if (error_count > 0) {
-        fprintf(stderr, "%u errors reported when configuring ETM\n", error_count);
-        return -1;
-    }
-
-    return 0;
-}
-
 static int configure_etmv4_addr_range_cid(cs_device_t etm,
     struct addr_range *range, int range_count, unsigned long cid)
 {
