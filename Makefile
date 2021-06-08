@@ -38,6 +38,11 @@ ifneq ($(strip $(DEBUG)),)
 endif
 
 TARGET:=proc-trace
+TARGET_FLAGS?=
+
+ifneq ($(strip $(DEBUG)),)
+  TARGET_FLAGS+=--export-config=1 --verbose=2
+endif
 
 TESTS:= \
   tests/fib \
@@ -66,7 +71,7 @@ trace-bf: $(TARGET) $(TESTS)
 trace: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo $(realpath $(TARGET)) $(realpath $(TRACEE))
+	sudo $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE))
 
 debug: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
