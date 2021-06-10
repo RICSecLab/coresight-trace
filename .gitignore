@@ -7,4 +7,5 @@ proc-trace
 tests/bf
 tests/fib
 tests/fib-large
+tests/fib-num
 tests/loop

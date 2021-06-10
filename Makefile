@@ -47,6 +47,7 @@ endif
 TESTS:= \
   tests/fib \
   tests/fib-large \
+  tests/fib-num \
   tests/loop \
   tests/bf \
 
