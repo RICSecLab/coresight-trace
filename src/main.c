@@ -47,6 +47,7 @@ pid_t trace_pid = 0;
 static const struct board *board;
 static struct cs_devices_t devices;
 static bool tracing_on = true;
+static bool polling_on = true;
 static int trace_cpu = DEFAULT_TRACE_CPU;
 static bool trace_started = false;
 static float etf_ram_usage_threshold = 0.8;
@@ -322,9 +323,11 @@ void parent(pid_t pid)
     }
   }
 
-  ret = pthread_create(&polling_thread, NULL, etb_polling, &pid);
-  if (ret != 0) {
-    return;
+  if (polling_on) {
+    ret = pthread_create(&polling_thread, NULL, etb_polling, &pid);
+    if (ret != 0) {
+      return;
+    }
   }
 
   while (1) {
@@ -392,6 +395,9 @@ int main(int argc, char *argv[])
     } else if (sscanf(argv[i], "--tracing=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
       tracing_on = n ? true : false;
+    } else if (sscanf(argv[i], "--polling=%d%c", &n, &junk) == 1
+        && (n == 0 || n == 1)) {
+      polling_on = n ? true : false;
     } else if (sscanf(argv[i], "--etf-stop-on-flush=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
       etb_stop_on_flush = n;

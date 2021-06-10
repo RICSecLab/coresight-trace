@@ -48,6 +48,10 @@ ifneq ($(strip $(NOTRACE)),)
   TARGET_FLAGS+=--tracing=0
 endif
 
+ifneq ($(strip $(NOPOLLING)),)
+  TARGET_FLAGS+=--tracing=1 --polling=0
+endif
+
 TESTS:= \
   tests/fib \
   tests/fib-large \
