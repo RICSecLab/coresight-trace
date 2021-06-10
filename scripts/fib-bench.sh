@@ -32,8 +32,9 @@ main() {
 
 run() {
   native  "$@"
-  tracing "$@" "0"
-  tracing "$@" "1"
+  tracing "$@" "0" "0"
+  tracing "$@" "1" "0"
+  tracing "$@" "1" "1"
 }
 
 native() {
@@ -49,18 +50,26 @@ tracing() {
   local num=$1
   local size=$2
   local tracing_flag=$3
+  local polling_flag=$4
 
   case "$tracing_flag" in
     "0") trace="disable" ;;
     "1") trace="enable" ;;
   esac
 
+  case "$polling_flag" in
+    "0") polling="disable" ;;
+    "1") polling="enable" ;;
+  esac
+
+  local tracer_flags="--tracing=$tracing_flag --polling=$polling_flag"
+
   rm -f ${ARTIFACTS}
 
-  echo "$(tput bold)== tracing $trace (size:$size #$num) ==$(tput sgr0)"
-  /usr/bin/time sudo ${TRACER} ${TRACER_ARGS} --tracing=$tracing_flag -- \
+  echo "$(tput bold)== tracing $trace polling $polling (size:$size #$num) ==$(tput sgr0)"
+  /usr/bin/time sudo ${TRACER} ${TRACER_ARGS} $tracer_flags -- \
     ${TRACEE} $size \
-    |& tee ${OUTPUT}/tracing-$trace-$size-$num.dat
+    |& tee ${OUTPUT}/tracing-$trace-polling-$polling-$size-$num.dat
 
   rm -f ${ARTIFACTS}
 }
