@@ -248,7 +248,9 @@ int enable_trace(const struct board *board, struct cs_devices_t *devices)
 
   cs_checkpoint();
 
-  cs_cti_diag();
+  if (registration_verbose > 0) {
+    cs_cti_diag();
+  }
 
   error_count = cs_error_count();
   if (error_count > 0) {
