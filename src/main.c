@@ -46,6 +46,7 @@ pid_t trace_pid = 0;
 
 static const struct board *board;
 static struct cs_devices_t devices;
+static bool tracing_on = true;
 static int trace_cpu = DEFAULT_TRACE_CPU;
 static bool trace_started = false;
 static float etf_ram_usage_threshold = 0.8;
@@ -81,9 +82,11 @@ static int init_trace(pid_t pid)
     goto exit;
   }
 
-  if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
-    fprintf(stderr, "setup_named_board() failed\n");
-    goto exit;
+  if (tracing_on) {
+    if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
+      fprintf(stderr, "setup_named_board() failed\n");
+      goto exit;
+    }
   }
 
   nprocs = get_nprocs();
@@ -107,7 +110,7 @@ exit:
     CPU_FREE(cpu_set);
   }
 
-  if (ret < 0) {
+  if (tracing_on && ret < 0) {
     cs_shutdown();
   }
 
@@ -274,10 +277,12 @@ static void *etb_polling(void *arg)
   int rwp;
   int ret;
 
-  etf_ram_depth = cs_get_buffer_size_bytes(devices.etb);
+  if (tracing_on) {
+    etf_ram_depth = cs_get_buffer_size_bytes(devices.etb);
+  }
 
   while (kill(pid, 0) == 0) {
-    if (trace_started == true) {
+    if (tracing_on && trace_started == true) {
       rwp = cs_get_buffer_rwp(devices.etb);
       if (rwp > (etf_ram_depth * etf_ram_usage_threshold)) {
         ret = kill(pid, SIGSTOP);
@@ -312,7 +317,9 @@ void parent(pid_t pid)
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     init_trace(pid);
-    start_trace();
+    if (tracing_on) {
+      start_trace();
+    }
   }
 
   ret = pthread_create(&polling_thread, NULL, etb_polling, &pid);
@@ -323,10 +330,12 @@ void parent(pid_t pid)
   while (1) {
     ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
     waitpid(pid, &wstatus, 0);
-    if (WIFEXITED(wstatus) && trace_started == true) {
-      stop_trace();
-      fetch_trace();
-      fini_trace();
+    if (WIFEXITED(wstatus)) {
+      if (tracing_on && trace_started == true) {
+        stop_trace();
+        fetch_trace();
+        fini_trace();
+      }
       return;
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGTRAP) {
       // TODO: It should support mprotect
@@ -339,12 +348,14 @@ void parent(pid_t pid)
         is_entered_mmap = !is_entered_mmap;
       }
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGSTOP) {
-      if (cs_buffer_has_wrapped(devices.etb)) {
-        fprintf(stderr, "WARNING: ETB full bit is set\n");
+      if (tracing_on) {
+        if (cs_buffer_has_wrapped(devices.etb)) {
+          fprintf(stderr, "WARNING: ETB full bit is set\n");
+        }
+        stop_trace();
+        fetch_trace();
+        start_trace();
       }
-      stop_trace();
-      fetch_trace();
-      start_trace();
     }
   }
 }
@@ -378,6 +389,9 @@ int main(int argc, char *argv[])
   for (i = 1; i < argc; i++) {
     if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
       trace_cpu = n;
+    } else if (sscanf(argv[i], "--tracing=%d%c", &n, &junk) == 1
+        && (n == 0 || n == 1)) {
+      tracing_on = n ? true : false;
     } else if (sscanf(argv[i], "--etf-stop-on-flush=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
       etb_stop_on_flush = n;

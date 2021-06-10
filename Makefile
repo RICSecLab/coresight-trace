@@ -44,6 +44,10 @@ ifneq ($(strip $(DEBUG)),)
   TARGET_FLAGS+=--export-config=1 --verbose=2
 endif
 
+ifneq ($(strip $(NOTRACE)),)
+  TARGET_FLAGS+=--tracing=0
+endif
+
 TESTS:= \
   tests/fib \
   tests/fib-large \
@@ -77,7 +81,7 @@ trace: $(TARGET) $(TESTS)
 debug: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo gdb --args $(realpath $(TARGET)) $(realpath $(TRACEE))
+	sudo gdb --args $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE))
 
 $(CSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
