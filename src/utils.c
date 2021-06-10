@@ -94,6 +94,8 @@ int export_decoder_args(const char *hardware, int cpu,
   int i;
   int ret;
 
+  ret = 0;
+
   if (!hardware || !trace_path || !args_path || !range) {
     return -1;
   }

@@ -36,6 +36,7 @@
 #define PAGE_SIZE 0x1000
 
 #define DEFAULT_TRACE_CPU 0
+#define DEFAULT_ETF_SIZE 0x1000
 
 const char *trace_name = "cstrace.bin";
 const char *decoder_args_path = "decoderargs.txt";
@@ -277,6 +278,8 @@ static void *etb_polling(void *arg)
   size_t etf_ram_depth;
   int rwp;
   int ret;
+
+  etf_ram_depth = DEFAULT_ETF_SIZE;
 
   if (tracing_on) {
     etf_ram_depth = cs_get_buffer_size_bytes(devices.etb);
