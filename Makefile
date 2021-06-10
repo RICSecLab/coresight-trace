@@ -8,6 +8,7 @@ CSAL_BUILD:=rel
 CSAL_INC:=$(CSAL_BASE)/include
 CSAL_LIB:=$(CSAL_BASE)/lib/$(CSAL_ARCH)/$(CSAL_BUILD)
 CSAL_DEMO:=$(CSAL_BASE)/demos
+CSAL_FLAGS:=ARCH=$(CSAL_ARCH) NO_DIAG=1 NO_CHECK=1
 LIBCSACCESS:=$(CSAL_LIB)/libcsaccess.a
 LIBCSACCUTIL:=$(CSAL_LIB)/libcsacc_util.a
 
@@ -94,7 +95,7 @@ $(TARGET): $(OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL)
 	$(CC) -o $@ $^ $(CFLAGS)
 
 libcsal:
-	$(MAKE) -C $(CSAL_BASE) ARCH=$(CSAL_ARCH) NO_DIAG=1
+	$(MAKE) -C $(CSAL_BASE) $(CSAL_FLAGS)
 
 $(LIBCSACCESS): libcsal
 $(LIBCSACCUTIL): libcsal
@@ -103,6 +104,6 @@ clean:
 	rm -f $(OBJS) $(TARGET) $(TESTS)
 
 dist-clean: clean
-	$(MAKE) -C $(CSAL_BASE) clean ARCH=$(CSAL_ARCH) NO_DIAG=1
+	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
 
 .PHONY: all trace-bf trace debug decode libcsal clean dist-clean
