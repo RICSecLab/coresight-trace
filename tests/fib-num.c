@@ -5,7 +5,7 @@
 int main(int argc, char *argv[])
 {
   long num;
-  unsigned long prev, curr, next, sum;
+  unsigned long prev, curr, next;
 
   if (argc != 2) {
     fprintf(stderr, "Usage: %s NUM\n", argv[0]);
@@ -21,14 +21,13 @@ int main(int argc, char *argv[])
     return -1;
   }
 
+  prev = 0;
   curr = 1;
-  next = 1;
 
   for (unsigned long i = 0; i < (unsigned long)num; i++) {
-    sum = curr + next;
+    next = prev + curr;
     prev = curr;
     curr = next;
-    next = sum;
   }
 
   printf("%lu: %lu\n", num, next);
