@@ -145,7 +145,7 @@ static void fini_trace(void)
   }
 }
 
-static int start_trace(void)
+static int start_trace(bool enable_etm)
 {
   int ret;
 
@@ -156,7 +156,7 @@ static int start_trace(void)
     goto exit;
   }
 
-  if (enable_trace(board, &devices) < 0) {
+  if (enable_trace(board, &devices, enable_etm) < 0) {
     fprintf(stderr, "enable_trace() failed\n");
     goto exit;
   }
@@ -178,7 +178,7 @@ exit:
   return ret;
 }
 
-static void stop_trace(void)
+static void stop_trace(bool disable_etm)
 {
   int i;
 
@@ -186,8 +186,10 @@ static void stop_trace(void)
     cs_etb_flush_and_wait_stop(&devices);
   }
 
-  for (i = 0; i < board->n_cpu; ++i) {
-    cs_trace_disable(devices.ptm[i]);
+  if (disable_etm) {
+    for (i = 0; i < board->n_cpu; ++i) {
+      cs_trace_disable(devices.ptm[i]);
+    }
   }
   cs_sink_disable(devices.etb);
 
@@ -322,7 +324,7 @@ void parent(pid_t pid)
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     init_trace(pid);
     if (tracing_on) {
-      start_trace();
+      start_trace(true);
     }
   }
 
@@ -338,7 +340,7 @@ void parent(pid_t pid)
     waitpid(pid, &wstatus, 0);
     if (WIFEXITED(wstatus)) {
       if (tracing_on && trace_started == true) {
-        stop_trace();
+        stop_trace(true);
         fetch_trace();
         fini_trace();
       }
@@ -358,9 +360,9 @@ void parent(pid_t pid)
         if (cs_buffer_has_wrapped(devices.etb)) {
           fprintf(stderr, "WARNING: ETB full bit is set\n");
         }
-        stop_trace();
+        stop_trace(false);
         fetch_trace();
-        start_trace();
+        start_trace(false);
       }
     }
   }
