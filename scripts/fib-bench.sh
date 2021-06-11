@@ -12,7 +12,7 @@ SIZES="0x1000 0x10000 0x100000 0x1000000"
 
 ARTIFACTS="cstrace.bin decoderargs.txt"
 
-TRIALS=3
+TRIALS=20
 #TRIALS=1
 OUTPUT="${ROOT_DIR}/bench/$(date "+%Y-%m-%d")"
 
