@@ -145,6 +145,117 @@ static int do_registration_jetson_nano(struct cs_devices_t *devices)
   return 0;
 }
 
+static int do_registration_jetsontx2(struct cs_devices_t *devices)
+{
+	// CoreSight configurations for Jetson TX2
+	// Currently only supports CoreSight Major and A57 Cluster
+
+	enum { A57_0, A57_3, A57_4, A57_5, Denver_0, Denver_1};
+
+	cs_device_t rep, etr, etf, funnel_major, funnel_a57, stm, tpiu, sys_cti;
+
+	cs_register_romtable(0x8000000);
+
+	/* CTI affinities */
+	cs_device_set_affinity(cs_device_register(0x9820000), A57_0);
+	cs_device_set_affinity(cs_device_register(0x9920000), A57_3);
+	cs_device_set_affinity(cs_device_register(0x9A20000), A57_4);
+	cs_device_set_affinity(cs_device_register(0x9B20000), A57_5);
+
+	// cs_device_set_affinity(cs_device_register(0x9420000), Denver_0);
+	// cs_device_set_affinity(cs_device_register(0x9520000), Denver_1);
+
+	/* PMU affinities */
+	cs_device_set_affinity(cs_device_register(0x9830000), A57_0);
+	cs_device_set_affinity(cs_device_register(0x9930000), A57_3);
+	cs_device_set_affinity(cs_device_register(0x9A30000), A57_4);
+	cs_device_set_affinity(cs_device_register(0x9B30000), A57_5);
+
+	// cs_device_set_affinity(cs_device_register(0x9430000), Denver_0);
+	// cs_device_set_affinity(cs_device_register(0x9530000), Denver_1);
+
+	/* PTM affinities(ETM) */
+	cs_device_set_affinity(cs_device_register(0x9840000), A57_0);
+	cs_device_set_affinity(cs_device_register(0x9940000), A57_3);
+	cs_device_set_affinity(cs_device_register(0x9A40000), A57_4);
+	cs_device_set_affinity(cs_device_register(0x9B40000), A57_5);
+
+	// cs_device_set_affinity(cs_device_register(0x9440000), Denver_0);
+	// cs_device_set_affinity(cs_device_register(0x9540000), Denver_1);
+
+	/* funnels in A57 clusters */
+	funnel_a57 = cs_device_get(0x9010000);
+	cs_atb_register(cs_cpu_get_device(A57_0, CS_DEVCLASS_SOURCE), 0,
+			funnel_a57, 0);
+	cs_atb_register(cs_cpu_get_device(A57_3, CS_DEVCLASS_SOURCE), 0,
+			funnel_a57, 1);
+	cs_atb_register(cs_cpu_get_device(A57_4, CS_DEVCLASS_SOURCE), 0,
+			funnel_a57, 2);
+	cs_atb_register(cs_cpu_get_device(A57_5, CS_DEVCLASS_SOURCE), 0,
+			funnel_a57, 3);
+
+	/* setup for coresight major */
+	funnel_major = cs_device_get(0x8010000);
+	stm = cs_device_get(0x8070000);
+	etf = cs_device_get(0x8030000);
+	rep = cs_device_get(0x8040000);
+	etr = cs_device_get(0x8050000);
+	tpiu = cs_device_get(0x8060000);
+
+  cs_atb_register(funnel_a57, 0, funnel_major, 0);
+  cs_atb_register(stm, 0, funnel_major, 3);
+
+	/* implementing trace-bus connections according to coresight-tools/top_rom_table.txt */
+  cs_atb_register(funnel_major, 0, etf, 0);
+  cs_atb_register(etf, 0, rep, 0);
+  cs_atb_register(rep, 1, etr, 0);
+  cs_atb_register(rep, 0, tpiu, 0);
+
+  devices->itm = stm;
+  devices->etb = etf;		/* core output through main etf */
+
+  /* stm registration */
+  cs_stm_config_master(stm, 0, 0x0a000000);
+  cs_stm_select_master(stm, 0);
+
+  /* Connect system CTI to devices according to Table 136 in Parker TRM */
+  sys_cti = cs_device_register(0x8020000);
+  /* etf */
+  cs_cti_connect_trigsrc(etf, CS_TRIGOUT_ETB_FULL,
+                cs_cti_trigsrc(sys_cti, 0));
+  cs_cti_connect_trigsrc(etf, CS_TRIGOUT_ETB_ACQCOMP,
+                cs_cti_trigsrc(sys_cti, 1));
+  cs_cti_connect_trigdst(cs_cti_trigdst(sys_cti, 0), etf,
+                CS_TRIGIN_ETB_TRIGIN);
+  cs_cti_connect_trigdst(cs_cti_trigdst(sys_cti, 1), etf,
+                CS_TRIGIN_ETB_FLUSHIN);
+  /* etr */
+  cs_cti_connect_trigsrc(etr, CS_TRIGOUT_ETB_FULL,
+                cs_cti_trigsrc(sys_cti, 2));
+  cs_cti_connect_trigsrc(etr, CS_TRIGOUT_ETB_ACQCOMP,
+                cs_cti_trigsrc(sys_cti, 3));
+  cs_cti_connect_trigdst(cs_cti_trigdst(sys_cti, 2), etr,
+                CS_TRIGIN_ETB_TRIGIN);
+  cs_cti_connect_trigdst(cs_cti_trigdst(sys_cti, 3), etr,
+                CS_TRIGIN_ETB_FLUSHIN);
+  /* stm */
+  cs_cti_connect_trigsrc(stm, CS_TRIGOUT_STM_ASYNCOUT,
+                cs_cti_trigsrc(sys_cti, 4));
+  cs_cti_connect_trigsrc(stm, CS_TRIGOUT_STM_TRIGOUTSPTE,
+                cs_cti_trigsrc(sys_cti, 5));
+  cs_cti_connect_trigsrc(stm, CS_TRIGOUT_STM_TRIGOUTSW,
+                cs_cti_trigsrc(sys_cti, 6));
+  /* TPIU (should be here but the document says TPIU not supported) */
+
+  /* There are A57x4 and denver cluster inside Parker SoC -
+    so hardcode here (are we really need this?) */
+
+  for (int i = 0; i < 4; i++) {
+      devices->cpu_id[i] = 0xD07;
+  }
+  return 0;
+}
+
 const struct board known_boards[] = {
   {
     .do_registration = do_registration_thunderx2,
@@ -154,6 +265,10 @@ const struct board known_boards[] = {
     .do_registration = do_registration_jetson_nano,
     .n_cpu = 4,
     .hardware = "Jetson Nano",
+  }, {
+    .do_registration = do_registration_jetsontx2,
+    .n_cpu = 4,
+    .hardware = "Jetson TX2",
   },
   {},
 };
