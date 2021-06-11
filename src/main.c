@@ -39,6 +39,7 @@
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 #define PAGE_SIZE 0x1000
 
+#define DEFAULT_BOARD_NAME "Marvell ThunderX2"
 #define DEFAULT_TRACE_CPU 0
 #define DEFAULT_ETF_SIZE 0x1000
 #define DEFAULT_TRACE_SIZE 0x80000
@@ -50,6 +51,7 @@ const char *board_name = "Marvell ThunderX2";
 int etb_stop_on_flush = 1;
 pid_t trace_pid = 0;
 
+static char *board_name = DEFAULT_BOARD_NAME;
 static const struct board *board;
 static struct cs_devices_t devices;
 static bool forkserver_mode = false;
@@ -600,6 +602,8 @@ int main(int argc, char *argv[])
     if (sscanf(argv[i], "--forkserver=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
       forkserver_mode = n ? true : false;
+    } else if (strcmp(argv[i], "--board") == 0 && i + 1 < argc) {
+      board_name = argv[++i];
     } else if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
       trace_cpu = n;
     } else if (sscanf(argv[i], "--tracing=%d%c", &n, &junk) == 1
