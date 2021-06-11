@@ -178,8 +178,10 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
       return -1;
     }
 
+#if 0 /* XXX: Workaround for Jetson Nano */
     /* Ensure TPIU isn't generating back-pressure */
     cs_disable_tpiu();
+#endif
     /* While programming, ensure we are not collecting trace */
     cs_sink_disable(devices->etb);
     for (i = 0; i < board->n_cpu; ++i) {
