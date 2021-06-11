@@ -45,8 +45,9 @@ set xtics ${SIZE_XTICS}
 set xtics nomirror
 set xrange [-1:7]
 set ylabel "Latency (msec)"
-set yrange [0:10000]
-set logscale y 10
+# set yrange [0:10000]
+# set logscale y 10
+set yrange [0:120]
 
 plot \
   '${OUTPUT}/native-0x1000-latency.dat' \
