@@ -7,7 +7,7 @@ OUTPUT=$1
 mkdir -p ${OUTPUT}/out
 
 ENVS="native tracing-disable-polling-disable tracing-enable-polling-disable tracing-enable-polling-enable"
-SIZES="0x1000 0x10000 0x100000 0x1000000"
+SIZES="0x100000 0x1000000 0x10000000"
 
 for env in $ENVS; do
   for size in $SIZES; do
@@ -19,7 +19,7 @@ for env in $ENVS; do
   done
 done
 
-SIZE_XTICS="('0x1000' 0, '0x10000' 2, '0x100000' 4, '0x1000000' 6)"
+SIZE_XTICS="('0x100000' 0, '0x1000000' 2, '0x10000000' 4)"
 
 BOX_PAT_NATIVE='fill patter 0 lt 1 lc rgb "green"'
 BOX_PAT_DISABLE='fill patter 1 lt 1 lc rgb "blue"'
@@ -43,45 +43,37 @@ set xlabel "fib num size"
 set xtics font ", 14"
 set xtics ${SIZE_XTICS}
 set xtics nomirror
-set xrange [-1:7]
+set xrange [-1:5]
 set ylabel "Latency (msec)"
 # set yrange [0:10000]
-# set logscale y 10
-set yrange [0:120]
+set logscale y 10
+set yrange [0:10000]
 
 plot \
-  '${OUTPUT}/native-0x1000-latency.dat' \
-      usi (0-0.75):(\$1):(\$2) w boxerrorbar $BOX_PAT_NATIVE title "native", \
-  '${OUTPUT}/tracing-disable-polling-disable-0x1000-latency.dat' \
-      usi (0-0.25):(\$1):(\$2) w boxerrorbar $BOX_PAT_DISABLE title "no tracing", \
-  '${OUTPUT}/tracing-enable-polling-disable-0x1000-latency.dat' \
-      usi (0+0.25):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_DIS title "tracing (no polling)", \
-  '${OUTPUT}/tracing-enable-polling-enable-0x1000-latency.dat' \
-      usi (0+0.75):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_EN title "tracing (polling)", \
-  '${OUTPUT}/native-0x10000-latency.dat' \
-      usi (2-0.75):(\$1):(\$2) w boxerrorbar $BOX_PAT_NATIVE notitle, \
-  '${OUTPUT}/tracing-disable-polling-disable-0x10000-latency.dat' \
-      usi (2-0.25):(\$1):(\$2) w boxerrorbar $BOX_PAT_DISABLE notitle, \
-  '${OUTPUT}/tracing-enable-polling-disable-0x10000-latency.dat' \
-      usi (2+0.25):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_DIS notitle, \
-  '${OUTPUT}/tracing-enable-polling-enable-0x10000-latency.dat' \
-      usi (2+0.75):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_EN notitle, \
   '${OUTPUT}/native-0x100000-latency.dat' \
-      usi (4-0.75):(\$1):(\$2) w boxerrorbar $BOX_PAT_NATIVE notitle, \
+      usi (0-0.6):(\$1):(\$2) w boxerrorbar $BOX_PAT_NATIVE title "native", \
   '${OUTPUT}/tracing-disable-polling-disable-0x100000-latency.dat' \
-      usi (4-0.25):(\$1):(\$2) w boxerrorbar $BOX_PAT_DISABLE notitle, \
+      usi (0-0.2):(\$1):(\$2) w boxerrorbar $BOX_PAT_DISABLE title "no tracing", \
   '${OUTPUT}/tracing-enable-polling-disable-0x100000-latency.dat' \
-      usi (4+0.25):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_DIS notitle, \
+      usi (0+0.2):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_DIS title "tracing (no polling)", \
   '${OUTPUT}/tracing-enable-polling-enable-0x100000-latency.dat' \
-      usi (4+0.75):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_EN notitle, \
+      usi (0+0.6):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_EN title "tracing (polling)", \
   '${OUTPUT}/native-0x1000000-latency.dat' \
-      usi (6-0.75):(\$1):(\$2) w boxerrorbar $BOX_PAT_NATIVE notitle, \
+      usi (2-0.6):(\$1):(\$2) w boxerrorbar $BOX_PAT_NATIVE notitle, \
   '${OUTPUT}/tracing-disable-polling-disable-0x1000000-latency.dat' \
-      usi (6-0.25):(\$1):(\$2) w boxerrorbar $BOX_PAT_DISABLE notitle, \
+      usi (2-0.2):(\$1):(\$2) w boxerrorbar $BOX_PAT_DISABLE notitle, \
   '${OUTPUT}/tracing-enable-polling-disable-0x1000000-latency.dat' \
-      usi (6+0.25):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_DIS notitle, \
+      usi (2+0.2):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_DIS notitle, \
   '${OUTPUT}/tracing-enable-polling-enable-0x1000000-latency.dat' \
-      usi (6+0.75):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_EN notitle
+      usi (2+0.6):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_EN notitle, \
+  '${OUTPUT}/native-0x10000000-latency.dat' \
+      usi (4-0.6):(\$1):(\$2) w boxerrorbar $BOX_PAT_NATIVE notitle, \
+  '${OUTPUT}/tracing-disable-polling-disable-0x10000000-latency.dat' \
+      usi (4-0.2):(\$1):(\$2) w boxerrorbar $BOX_PAT_DISABLE notitle, \
+  '${OUTPUT}/tracing-enable-polling-disable-0x10000000-latency.dat' \
+      usi (4+0.2):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_DIS notitle, \
+  '${OUTPUT}/tracing-enable-polling-enable-0x10000000-latency.dat' \
+      usi (4+0.6):(\$1):(\$2) w boxerrorbar $BOX_PAT_EN_EN notitle
 
 set terminal png lw 3 14 crop
 set key font ", 14"

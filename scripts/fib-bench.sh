@@ -8,7 +8,7 @@ TRACER=${TRACER:-"${ROOT_DIR}/proc-trace"}
 TRACER_ARGS=${TRACER_ARGS:-""}
 
 TRACEE="${ROOT_DIR}/tests/fib-num"
-SIZES="0x1000 0x10000 0x100000 0x1000000"
+SIZES="0x100000 0x1000000 0x10000000"
 
 ARTIFACTS="cstrace.bin decoderargs.txt"
 
