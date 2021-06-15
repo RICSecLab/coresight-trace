@@ -51,6 +51,7 @@ static bool tracing_on = true;
 static bool polling_on = true;
 static int trace_cpu = DEFAULT_TRACE_CPU;
 static bool trace_started = false;
+static bool is_first_trace = true;
 static float etf_ram_usage_threshold = 0.8;
 static useconds_t polling_sleep_us = 10;
 static int export_config = 0;
@@ -151,9 +152,12 @@ static int start_trace(void)
 
   ret = -1;
 
-  if (configure_trace(board, &devices, range, range_count) < 0) {
-    fprintf(stderr, "configure_trace() failed\n");
-    goto exit;
+  if (is_first_trace) {
+    if (configure_trace(board, &devices, range, range_count) < 0) {
+      fprintf(stderr, "configure_trace() failed\n");
+      goto exit;
+    }
+    is_first_trace = false;
   }
 
   if (enable_trace(board, &devices) < 0) {
