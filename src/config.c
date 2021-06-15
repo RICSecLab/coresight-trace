@@ -229,7 +229,7 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
     return 0;
 }
 
-int enable_trace(const struct board *board, struct cs_devices_t *devices, bool enable_etm)
+int enable_trace(const struct board *board, struct cs_devices_t *devices)
 {
   int i, error_count;
 
@@ -242,10 +242,8 @@ int enable_trace(const struct board *board, struct cs_devices_t *devices, bool e
     return -1;
   }
 
-  if (enable_etm) {
-    for (i = 0; i < board->n_cpu; ++i) {
-      cs_trace_enable(devices->ptm[i]);
-    }
+  for (i = 0; i < board->n_cpu; ++i) {
+    cs_trace_enable(devices->ptm[i]);
   }
 
   cs_checkpoint();
