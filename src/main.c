@@ -392,7 +392,17 @@ void parent(pid_t pid)
 
 static void usage(char *argv0)
 {
-  fprintf(stderr, "Usage: %s [FLAGS] [--] EXE [ARGS]\n", argv0);
+  fprintf(stderr, "Usage: %s [OPTIONS] [--] EXE [ARGS]\n", argv0);
+  fprintf(stderr, "CoreSight process tracer\n");
+  fprintf(stderr, "[OPTIONS]\n");
+  fprintf(stderr, "  --cpu=INT\t\t\tbind traced process to CPU (default: %d)\n", trace_cpu);
+  fprintf(stderr, "  --tracing={0,1}\t\tenable tracing (default: %d)\n", tracing_on);
+  fprintf(stderr, "  --polling={0,1}\t\tenable ETF polling (default: %d)\n", polling_on);
+  fprintf(stderr, "  --export-config={0,1}\t\tenable exporting config (default: %d)\n", export_config);
+  fprintf(stderr, "  --etf-stop-on-flush={0,1}\tenable ETF polling (default: %d)\n", etb_stop_on_flush);
+  fprintf(stderr, "  --etf-threshold=FLOAT\t\tETF full threshold (default: %.1f)\n", etf_ram_usage_threshold);
+  fprintf(stderr, "  --verbose=INT\t\t\tverbose output level (default: %d)\n", registration_verbose);
+  fprintf(stderr, "  --help\t\t\tshow this help\n");
 }
 
 int main(int argc, char *argv[])
