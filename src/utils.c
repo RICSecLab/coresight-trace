@@ -21,6 +21,38 @@ void dump_mem_range(FILE *stream, struct addr_range *range, int count)
   }
 }
 
+void dump_maps(FILE *stream, pid_t pid)
+{
+  FILE *fp;
+  char maps_path[PATH_MAX];
+  char *line;
+  size_t n;
+  ssize_t readn;
+
+  memset(maps_path, 0, sizeof(maps_path));
+  snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
+
+  fp = fopen(maps_path, "r");
+  if (fp == NULL) {
+    perror("fopen");
+    return;
+  }
+
+  line = NULL;
+  n = 0;
+  while ((readn = getline(&line, &n, fp)) != -1) {
+    fprintf(stream, "%s", line);
+  }
+
+  if (line != NULL) {
+    free(line);
+  }
+
+  fclose(fp);
+
+  return;
+}
+
 int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
 {
   FILE *fp;

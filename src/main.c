@@ -265,6 +265,26 @@ static int get_mmap_params(pid_t pid, struct mmap_params *params)
   return 0;
 }
 
+static int get_exit_group_params(pid_t pid)
+{
+  struct user_pt_regs regs;
+  struct iovec iov;
+  long syscall;
+
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  if (ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov) < 0) {
+    return -1;
+  }
+
+  syscall = regs.regs[8];
+  if (syscall != __NR_exit_group) {
+    return -1;
+  }
+
+  return 0;
+}
+
 static struct addr_range *append_mmap_exec_region(pid_t pid,
     struct mmap_params *params)
 {
@@ -376,6 +396,12 @@ void parent(pid_t pid, int *child_status)
       // TODO: It should support mprotect
       if (get_mmap_params(pid, &mmap_params) < 0) {
         // Not mmap syscall. Do nothing
+        if (get_exit_group_params(pid) >= 0) {
+          // exit_group syscall.
+          if (registration_verbose > 0) {
+            dump_maps(stderr, pid);
+          }
+        }
       } else {
         if (is_entered_mmap) {
           append_mmap_exec_region(pid, &mmap_params);
