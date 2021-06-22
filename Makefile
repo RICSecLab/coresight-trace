@@ -96,7 +96,7 @@ debug: $(TARGET) $(TESTS)
 	cd $(DIR) && \
 	sudo gdb --args $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
-$(CSDEC):
+$(LIBCSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
 
 $(TARGET): $(OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
@@ -113,5 +113,6 @@ clean:
 
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
+	$(MAKE) -C $(CSDEC_BASE) clean
 
 .PHONY: all trace-bf trace debug decode libcsal clean dist-clean
