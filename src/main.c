@@ -28,6 +28,10 @@
 #include "csregisters.h"
 #include "cs_util_create_snapshot.h"
 
+#include "cs-decoder.h"
+
+#include "proc-trace.h"
+#include "afl.h"
 #include "config.h"
 
 #define RANGE_MAX (32)
@@ -47,6 +51,7 @@ pid_t trace_pid = 0;
 
 static const struct board *board;
 static struct cs_devices_t devices;
+static bool forkserver_mode = false;
 static bool tracing_on = true;
 static bool polling_on = true;
 static int trace_cpu = DEFAULT_TRACE_CPU;
@@ -62,6 +67,8 @@ static pthread_mutex_t trace_mutex;
 
 extern const struct board known_boards[];
 extern int registration_verbose;
+extern unsigned char *afl_area_ptr;
+extern unsigned int afl_map_size;
 
 struct mmap_params {
   void *addr;
@@ -136,8 +143,13 @@ static void fini_trace(void)
   }
   memset(trace_path, 0, sizeof(trace_path));
   snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
-  export_decoder_args(board_name, trace_cpu, trace_path, decoder_args_path,
-      range, range_count);
+  if (forkserver_mode) {
+    write_bitmap(trace_path, trace_cpu, range_count,
+        (struct bin_addr_range *)range, afl_area_ptr, afl_map_size);
+  } else {
+    export_decoder_args(board_name, trace_cpu, trace_path, decoder_args_path,
+        range, range_count);
+  }
 
   if (registration_verbose > 0) {
     dump_mem_range(stderr, range, range_count);
@@ -316,7 +328,7 @@ void child(char *argv[])
   execvp(argv[0], argv);
 }
 
-void parent(pid_t pid)
+void parent(pid_t pid, int *child_status)
 {
   int wstatus;
   struct mmap_params mmap_params;
@@ -388,11 +400,15 @@ void parent(pid_t pid)
 
   pthread_cond_destroy(&trace_cond);
   pthread_mutex_destroy(&trace_mutex);
+
+  if (child_status) {
+    *child_status = wstatus;
+  }
 }
 
 static void usage(char *argv0)
 {
-  fprintf(stderr, "Usage: %s [OPTIONS] [--] EXE [ARGS]\n", argv0);
+  fprintf(stderr, "Usage: %s [OPTIONS] -- EXE [ARGS]\n", argv0);
   fprintf(stderr, "CoreSight process tracer\n");
   fprintf(stderr, "[OPTIONS]\n");
   fprintf(stderr, "  --cpu=INT\t\t\tbind traced process to CPU (default: %d)\n", trace_cpu);
@@ -418,16 +434,16 @@ int main(int argc, char *argv[])
   argvp = NULL;
   registration_verbose = 0;
 
-  if (argc < 2) {
+  if (argc < 3) {
     usage(argv[0]);
     exit(EXIT_SUCCESS);
-  } else if (argc == 2) {
-    argvp = &argv[1];
-    i++;
   }
 
   for (i = 1; i < argc; i++) {
-    if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
+    if (sscanf(argv[i], "--forkserver=%d%c", &n, &junk) == 1
+        && (n == 0 || n == 1)) {
+      forkserver_mode = n ? true : false;
+    } else if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
       trace_cpu = n;
     } else if (sscanf(argv[i], "--tracing=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
@@ -464,6 +480,12 @@ int main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }
 
+  if (forkserver_mode) {
+    afl_setup();
+    afl_forkserver(argvp);
+    exit(EXIT_SUCCESS);
+  }
+
   pid = fork();
   switch (pid) {
     case 0:
@@ -474,7 +496,7 @@ int main(int argc, char *argv[])
       exit(EXIT_FAILURE);
       break;
     default:
-      parent(pid);
+      parent(pid, NULL);
       wait(NULL);
       break;
   }

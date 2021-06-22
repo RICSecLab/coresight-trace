@@ -14,6 +14,8 @@ LIBCSACCUTIL:=$(CSAL_LIB)/libcsacc_util.a
 
 CSDEC_BASE:=coresight-decoder
 CSDEC:=$(CSDEC_BASE)/processor
+CSDEC_INC:=$(CSDEC_BASE)/include
+LIBCSDEC:=$(CSDEC_BASE)/libcsdec.a
 
 INC:=include
 
@@ -22,6 +24,7 @@ HDRS:= \
   $(INC)/utils.h \
 
 OBJS:= \
+  src/afl.o \
   src/config.o \
   src/known_boards.o \
   src/main.o \
@@ -32,7 +35,9 @@ CFLAGS:= \
   -I$(INC) \
   -I$(CSAL_INC) \
   -I$(CSAL_DEMO) \
+  -I$(CSDEC_INC) \
   -lpthread \
+  -lcapstone \
 
 ifneq ($(strip $(DEBUG)),)
   CFLAGS+=-g -O0
@@ -94,8 +99,8 @@ debug: $(TARGET) $(TESTS)
 $(CSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
 
-$(TARGET): $(OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL)
-	$(CC) -o $@ $^ $(CFLAGS)
+$(TARGET): $(OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
+	$(CXX) -o $@ $^ $(CFLAGS)
 
 libcsal:
 	$(MAKE) -C $(CSAL_BASE) $(CSAL_FLAGS)
