@@ -65,6 +65,7 @@ TESTS:= \
 DATE:=$(shell date +%Y-%m-%d-%H-%M-%S)
 DIR?=trace/$(DATE)
 TRACEE?=tests/fib
+TRACEE_ARGS?=
 
 BF_HELLO:="+[-->-[>>+>-----<<]<--<---]>-.>>>+.>>..+++[.>]<<<<.+++.------.<<-.>>>>+."
 BF_INC:="[->+<]"
@@ -83,12 +84,12 @@ trace-bf: $(TARGET) $(TESTS)
 trace: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE))
+	sudo $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
 debug: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo gdb --args $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE))
+	sudo gdb --args $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
 $(CSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
