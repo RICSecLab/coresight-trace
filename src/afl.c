@@ -231,13 +231,6 @@ void afl_forkserver(char *argv[])
 
     parent(child_pid, &status);
 
-#if 0
-    /* Get and relay exit status to parent. */
-    if (waitpid(child_pid, &status, is_persistent ? WUNTRACED : 0) < 0) {
-      exit(6);
-    }
-#endif
-
     /* In persistent mode, the child stops itself with SIGSTOP to indicate
      * a successfull run. In this case, we want to wake it up without forking
      * again. */

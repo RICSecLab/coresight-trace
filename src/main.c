@@ -355,7 +355,12 @@ static void *etb_polling(void *arg)
 
 void child(char *argv[])
 {
-  ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+  long ret;
+
+  ret = ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+  if (ret < 0) {
+    perror("ptrace");
+  }
   execvp(argv[0], argv);
 }
 
