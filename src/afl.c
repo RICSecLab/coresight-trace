@@ -75,6 +75,12 @@ void afl_setup(void)
   char *inst_r;
   int shm_id;
 
+  /* XXX: proc-trace uses its own CPU affinity settings */
+  if (!getenv("AFL_NO_AFFINITY")) {
+    fprintf(stderr, "[AFL] ERROR: AFL_NO_AFFINITY must be set to use CoreSight mode\n");
+    exit(1);
+  }
+
   inst_r = getenv("AFL_INST_RATIO");
   if (inst_r) {
     unsigned int r;
