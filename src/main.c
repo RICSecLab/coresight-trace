@@ -61,6 +61,7 @@ static float etf_ram_usage_threshold = 0.8;
 static int export_config = 0;
 static int range_count = 0;
 static struct addr_range range[RANGE_MAX];
+static libcsdec_t decoder = NULL;
 
 static pthread_cond_t trace_cond;
 static pthread_mutex_t trace_mutex;
@@ -78,6 +79,29 @@ struct mmap_params {
   int fd;
   off_t offset;
 };
+
+static libcsdec_t init_decoder(void)
+{
+  const char **paths;
+  libcsdec_t decoder;
+  int i;
+
+  paths = malloc(sizeof(char *) * range_count);
+  if (!paths) {
+    return (libcsdec_t)NULL;
+  }
+  for (i = 0; i < range_count; i++) {
+    paths[i] = range[i].path;
+  }
+
+  decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size, true);
+
+  if (paths) {
+    free(paths);
+  }
+
+  return decoder;
+}
 
 static int init_trace(pid_t pid)
 {
@@ -145,6 +169,10 @@ static void fini_trace(void)
   memset(trace_path, 0, sizeof(trace_path));
   snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
   if (forkserver_mode) {
+    decoder = decoder ? decoder : init_decoder();
+    if (!decoder) {
+      return;
+    }
     if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
       return;
     }
@@ -152,8 +180,8 @@ static void fini_trace(void)
       export_decoder_args(board_name, trace_cpu, trace_path,
           decoder_args_path, range, range_count);
     }
-    if (write_bitmap(trace_path, trace_id, range_count,
-      (struct bin_addr_range *)range, afl_area_ptr, afl_map_size, false) < 0) {
+    if (libcsdec_write_bitmap(decoder, trace_path, trace_id, range_count,
+      (struct libcsdec_memory_map *)range) != DECODE_SUCCESS) {
       return;
     }
     remove(trace_path);
