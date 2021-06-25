@@ -438,6 +438,7 @@ void parent(pid_t pid, int *child_status)
   pthread_cond_destroy(&trace_cond);
   pthread_mutex_destroy(&trace_mutex);
 
+  is_first_trace = true; /* XXX: To setup board again */
   if (child_status) {
     *child_status = wstatus;
   }
