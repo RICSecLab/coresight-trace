@@ -2,7 +2,7 @@
 
 #include "utils.h"
 
-static int get_trace_id(const char *hardware, int cpu)
+int get_trace_id(const char *hardware, int cpu)
 {
   if (strcmp(hardware, "Marvell ThunderX2") == 0) {
     return 0x10 + (cpu % 28) * 4 + cpu / 28;

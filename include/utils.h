@@ -15,6 +15,7 @@ struct addr_range {
   char path[PATH_MAX];
 };
 
+int get_trace_id(const char *hardware, int cpu);
 void dump_maps(FILE *stream, pid_t pid);
 void dump_mem_range(FILE *stream, struct addr_range *range, int count);
 int setup_mem_range(pid_t pid, struct addr_range *range, int count_max);
