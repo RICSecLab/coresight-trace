@@ -28,7 +28,7 @@
 #include "csregisters.h"
 #include "cs_util_create_snapshot.h"
 
-#include "cs-decoder.h"
+#include "libcsdec.h"
 
 #include "proc-trace.h"
 #include "afl.h"
@@ -133,6 +133,7 @@ static void fini_trace(void)
 {
   char *cwd;
   char trace_path[PATH_MAX];
+  int trace_id;
 
   cs_shutdown();
 
@@ -144,8 +145,18 @@ static void fini_trace(void)
   memset(trace_path, 0, sizeof(trace_path));
   snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
   if (forkserver_mode) {
-    write_bitmap(trace_path, trace_cpu, range_count,
-        (struct bin_addr_range *)range, afl_area_ptr, afl_map_size);
+    if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+      return;
+    }
+    if (export_config) {
+      export_decoder_args(board_name, trace_cpu, trace_path,
+          decoder_args_path, range, range_count);
+    }
+    if (write_bitmap(trace_path, trace_id, range_count,
+      (struct bin_addr_range *)range, afl_area_ptr, afl_map_size, false) < 0) {
+      return;
+    }
+    remove(trace_path);
   } else {
     export_decoder_args(board_name, trace_cpu, trace_path, decoder_args_path,
         range, range_count);
