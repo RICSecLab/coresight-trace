@@ -112,8 +112,6 @@ static int configure_etmv4_addr_range_cid(cs_device_t etm,
     tconfig.flags |= CS_ETMC_ADDR_COMP;
 
     /* mark the config structure to program the above registers on 'put' */
-    tconfig.syncpr = 0xc;	/* 4096 bytes per sync */
-
     cs_etm_config_put_ex(etm, &tconfig);
 
     if (registration_verbose > 0) {
@@ -164,8 +162,8 @@ int init_etm(cs_device_t dev)
     v4config.eventctlr0r = 0;	/* disable all event tracing */
     v4config.eventctlr1r = 0;
     /* config */
-    v4config.stallcrlr = 0;	/* no stall */
-    v4config.syncpr = 0xC;	/* sync 4096 bytes */
+    v4config.stallcrlr = (1 << 13);	/* NOOVERFLOW */
+    v4config.syncpr = 0;	/* no sync */
     cs_etm_config_put_ex(dev, &v4config);
 
     return 0;
