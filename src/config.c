@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-const bool return_stack = true;
+const bool return_stack = false;
 
 extern pid_t trace_pid;
 extern int etb_stop_on_flush;
