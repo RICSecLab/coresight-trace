@@ -4,7 +4,11 @@ SHELL:=bash
 
 CSAL_BASE:=CSAL
 CSAL_ARCH:=arm64
-CSAL_BUILD:=rel
+ifneq ($(strip $(DEBUG)),)
+  CSAL_BUILD:=dbg
+else
+  CSAL_BUILD:=rel
+endif
 CSAL_INC:=$(CSAL_BASE)/include
 CSAL_LIB:=$(CSAL_BASE)/lib/$(CSAL_ARCH)/$(CSAL_BUILD)
 CSAL_DEMO:=$(CSAL_BASE)/demos
