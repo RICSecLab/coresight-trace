@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
@@ -36,6 +37,7 @@ char *dec_path;
 unsigned int afl_map_size = MAP_SIZE;
 
 extern char **dec_args;
+extern bool needs_rerun;
 
 /* This is the other size of the same channel. Since timeouts are handled by
  * afl-fuzz simple killing the child, we can just wait until the pipe breaks. */
@@ -230,6 +232,13 @@ void afl_forkserver(char *argv[])
     afl_wait_tsl(t_fd[0]);
 
     parent(child_pid, &status);
+
+    if (needs_rerun) {
+      fprintf(stderr, "[AFL] ERROR: failed to retrieve bitmap\n");
+      needs_rerun = false;
+      status = -1;
+      exit(11);
+    }
 
     /* In persistent mode, the child stops itself with SIGSTOP to indicate
      * a successfull run. In this case, we want to wake it up without forking

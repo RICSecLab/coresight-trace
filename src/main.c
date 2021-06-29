@@ -48,6 +48,7 @@
 
 int etb_stop_on_flush = 1;
 pid_t trace_pid = 0;
+bool needs_rerun = false;
 
 static char *board_name = DEFAULT_BOARD_NAME;
 static const struct board *board;
@@ -169,6 +170,7 @@ exit:
 
 static void fini_trace(void)
 {
+  libcsdec_result_t ret;
   char *cwd;
   char trace_path[PATH_MAX];
   char decoder_args_path[PATH_MAX];
@@ -190,11 +192,15 @@ static void fini_trace(void)
     return;
   }
 
-  if (forkserver_mode && !export_config) {
-    /* TODO: Use libcsdec_write_bitmap return code */
-    libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
+  if (forkserver_mode) {
+    ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
       range_count, (struct libcsdec_memory_map *)range);
-    goto exit;
+    if (ret != LIBCEDEC_SUCCESS) {
+      needs_rerun = true;
+    }
+    if (!export_config && !needs_rerun) {
+      return;
+    }
   }
 
   cwd = getcwd(NULL, 0);
@@ -224,11 +230,6 @@ static void fini_trace(void)
   if (fp) {
     fwrite(trace_buf, (size_t)((char *)trace_buf_ptr - (char *)trace_buf), 1, fp);
     fclose(fp);
-  }
-
-  if (forkserver_mode) {
-    libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
-      range_count, (struct libcsdec_memory_map *)range);
   }
 
 exit:
