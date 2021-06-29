@@ -46,8 +46,6 @@
 #define DEFAULT_TRACE_NAME "cstrace.bin"
 #define DEFAULT_TRACE_ARGS_NAME "decoderargs.txt"
 
-const char *board_name = "Marvell ThunderX2";
-
 int etb_stop_on_flush = 1;
 pid_t trace_pid = 0;
 
