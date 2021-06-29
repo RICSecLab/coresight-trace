@@ -41,9 +41,10 @@
 
 #define DEFAULT_TRACE_CPU 0
 #define DEFAULT_ETF_SIZE 0x1000
+#define DEFAULT_TRACE_SIZE 0x80000
+#define DEFAULT_TRACE_NAME "cstrace.bin"
+#define DEFAULT_TRACE_ARGS_NAME "decoderargs.txt"
 
-const char *trace_name = "cstrace.bin";
-const char *decoder_args_path = "decoderargs.txt";
 const char *board_name = "Marvell ThunderX2";
 
 int etb_stop_on_flush = 1;
@@ -58,10 +59,14 @@ static int trace_cpu = DEFAULT_TRACE_CPU;
 static bool trace_started = false;
 static bool is_first_trace = true;
 static float etf_ram_usage_threshold = 0.8;
-static int export_config = 0;
+static bool export_config = false;
 static int range_count = 0;
 static struct addr_range range[RANGE_MAX];
 static libcsdec_t decoder = NULL;
+static void *trace_buf = NULL;
+static size_t trace_buf_size = 0;
+static void *trace_buf_ptr = NULL;
+static int count = 0;
 
 static pthread_cond_t trace_cond;
 static pthread_mutex_t trace_mutex;
@@ -112,6 +117,15 @@ static int init_trace(pid_t pid)
 
   ret = -1;
 
+  trace_buf = mmap(NULL, DEFAULT_TRACE_SIZE, PROT_READ | PROT_WRITE,
+      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (!trace_buf) {
+    perror("mmap");
+    goto exit;
+  }
+  trace_buf_size = DEFAULT_TRACE_SIZE;
+  trace_buf_ptr = trace_buf;
+
   trace_pid = pid;
   if ((range_count = setup_mem_range(pid, range, RANGE_MAX)) < 0) {
     fprintf(stderr, "setup_mem_range() failed\n");
@@ -157,39 +171,67 @@ static void fini_trace(void)
 {
   char *cwd;
   char trace_path[PATH_MAX];
+  char decoder_args_path[PATH_MAX];
   int trace_id;
+  FILE *fp;
+
+  cwd = NULL;
 
   cs_shutdown();
+
+  if (forkserver_mode) {
+    decoder = decoder ? decoder : init_decoder();
+    if (!decoder) {
+      return;
+    }
+  }
+
+  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+    return;
+  }
+
+  if (forkserver_mode && !export_config) {
+    /* TODO: Use libcsdec_write_bitmap return code */
+    libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
+      range_count, (struct libcsdec_memory_map *)range);
+    goto exit;
+  }
 
   cwd = getcwd(NULL, 0);
   if (!cwd) {
     perror("getcwd");
     return;
   }
+
   memset(trace_path, 0, sizeof(trace_path));
-  snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
+  memset(decoder_args_path, 0, sizeof(decoder_args_path));
   if (forkserver_mode) {
-    decoder = decoder ? decoder : init_decoder();
-    if (!decoder) {
-      return;
-    }
-    if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
-      return;
-    }
-    if (export_config) {
-      export_decoder_args(board_name, trace_cpu, trace_path,
-          decoder_args_path, range, range_count);
-    }
-    if (libcsdec_write_bitmap(decoder, trace_path, trace_id, range_count,
-      (struct libcsdec_memory_map *)range) != DECODE_SUCCESS) {
-      return;
-    }
-    remove(trace_path);
+    snprintf(trace_path, sizeof(trace_path), "%s/cstrace%d.bin", cwd, count);
+    snprintf(decoder_args_path, sizeof(decoder_args_path),
+        "%s/decoderargs%d.txt", cwd, count);
   } else {
-    export_decoder_args(board_name, trace_cpu, trace_path, decoder_args_path,
-        range, range_count);
+    snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, DEFAULT_TRACE_NAME);
+    snprintf(decoder_args_path, sizeof(decoder_args_path),
+        "%s/%s", cwd, DEFAULT_TRACE_ARGS_NAME);
   }
 
+  if (export_decoder_args(board_name, trace_cpu, trace_path, decoder_args_path,
+        range, range_count) < 0) {
+    goto exit;
+  }
+
+  fp = fopen(trace_path, "wb");
+  if (fp) {
+    fwrite(trace_buf, (size_t)((char *)trace_buf_ptr - (char *)trace_buf), 1, fp);
+    fclose(fp);
+  }
+
+  if (forkserver_mode) {
+    libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
+      range_count, (struct libcsdec_memory_map *)range);
+  }
+
+exit:
   if (registration_verbose > 0) {
     dump_mem_range(stderr, range, range_count);
   }
@@ -197,6 +239,12 @@ static void fini_trace(void)
   if (cwd) {
     free(cwd);
   }
+
+  if (trace_buf) {
+    munmap(trace_buf, trace_buf_size);
+  }
+
+  count++;
 }
 
 static int start_trace(void)
@@ -218,7 +266,7 @@ static int start_trace(void)
     goto exit;
   }
 
-  if (export_config > 0) {
+  if (export_config) {
     do_dump_config(board, &devices, 0);
   }
 
@@ -259,7 +307,43 @@ static void stop_trace(void)
 
 static void fetch_trace(void)
 {
-  do_fetch_trace(&devices, 0);
+  cs_device_t etb;
+  int len;
+  size_t buf_remain;
+  void *new_trace_buf;
+  size_t new_trace_buf_size;
+  int n;
+
+  etb = devices.etb;
+
+  trace_buf_ptr = (void *)ALIGN_UP((unsigned long)trace_buf_ptr, 0x8);
+
+  len = cs_get_buffer_unread_bytes(etb);
+  buf_remain = trace_buf_size - (size_t)((char *)trace_buf_ptr - (char *)trace_buf);
+  if ((size_t)len > buf_remain) {
+    new_trace_buf_size = trace_buf_size * 2;
+    new_trace_buf = mremap(trace_buf, trace_buf_size, new_trace_buf_size, 0);
+
+    if (!new_trace_buf) {
+      perror("mremap");
+      return;
+    }
+    trace_buf_ptr = (void *)((char *)new_trace_buf
+        + ((char *)trace_buf_ptr - (char *)trace_buf));
+    trace_buf = new_trace_buf;
+    trace_buf_size = new_trace_buf_size;
+    buf_remain = (size_t)((char *)trace_buf_ptr - (char *)trace_buf);
+  }
+
+  n = cs_get_trace_data(etb, trace_buf_ptr, buf_remain);
+  if (n <= 0) {
+    fprintf(stderr, "Failed to get trace\n");
+    return;
+  } else if (n < len) {
+    fprintf(stderr, "Got incomplete trace\n");
+  }
+  cs_empty_trace_buffer(etb);
+  trace_buf_ptr = (void *)((char *)trace_buf_ptr + n);
 }
 
 static void read_pid_fd_path(pid_t pid, int fd, char *buf, size_t size)
@@ -530,7 +614,7 @@ int main(int argc, char *argv[])
       etf_ram_usage_threshold = f;
     } else if (sscanf(argv[i], "--export-config=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
-      export_config = n;
+      export_config = n ? true : false;
     } else if (sscanf(argv[i], "--verbose=%d%c", &n, &junk) == 1
         && (n >= 0)) {
       registration_verbose = n;
