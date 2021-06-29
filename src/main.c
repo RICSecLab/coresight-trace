@@ -298,6 +298,8 @@ static void stop_trace(void)
   }
   cs_sink_disable(devices.etb);
 
+  cs_checkpoint();
+
   if (registration_verbose > 1) {
     for (i = 0; i < board->n_cpu; ++i) {
       show_etm_config(devices.ptm[i]);
