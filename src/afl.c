@@ -83,6 +83,12 @@ void afl_setup(void)
     exit(1);
   }
 
+  /* XXX: Max CPU freq causes ETM buffer overflows on ThunderX2 */
+  if (!getenv("AFL_SKIP_CPUFREQ")) {
+    fprintf(stderr, "[AFL] ERROR: AFL_SKIP_CPUFREQ must be set to use CoreSight mode\n");
+    exit(1);
+  }
+
   inst_r = getenv("AFL_INST_RATIO");
   if (inst_r) {
     unsigned int r;
