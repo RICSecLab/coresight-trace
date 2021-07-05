@@ -498,7 +498,8 @@ static void *etb_polling(void *arg)
 {
   pid_t pid = *(pid_t *)arg;
   size_t etf_ram_depth;
-  int rwp;
+  size_t etf_ram_remain;
+  unsigned int rwp;
   int ret;
 
   etf_ram_depth = DEFAULT_ETF_SIZE;
@@ -510,7 +511,8 @@ static void *etb_polling(void *arg)
   while (kill(pid, 0) == 0) {
     if (tracing_on && trace_started == true) {
       rwp = cs_get_buffer_rwp(devices.etb);
-      if (rwp > (etf_ram_depth * etf_ram_usage_threshold)) {
+      etf_ram_remain = etr_ram_addr + etf_ram_depth - rwp;
+      if (etf_ram_remain < (etf_ram_depth * (1.0 - etf_ram_usage_threshold))) {
         pthread_mutex_lock(&trace_mutex);
         ret = kill(pid, SIGSTOP);
         if (ret < 0) {

@@ -42,7 +42,13 @@ static int do_registration_thunderx2(struct cs_devices_t *devices)
     cs_atb_register(rep, 0, etr, 0);
     cs_atb_register(rep, 1, tpiu, 0);
 
+#if 0
     devices->etb = etf;
+    devices->trace_sinks[0] = etr;
+#else
+    devices->etb = etr;
+    devices->trace_sinks[0] = etf;
+#endif
 
     for (int i = 0; i < num_cs_cpu; i++ ) {
         devices->cpu_id[i] = cpu_id[i];
