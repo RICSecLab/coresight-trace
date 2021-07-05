@@ -4,6 +4,8 @@
 
 const bool return_stack = false;
 
+extern unsigned long etr_ram_addr;
+extern size_t etr_ram_size;
 extern pid_t trace_pid;
 extern int etb_stop_on_flush;
 extern int registration_verbose;
@@ -237,9 +239,25 @@ int enable_trace(const struct board *board, struct cs_devices_t *devices)
     return -1;
   }
 
-  if (cs_sink_enable(devices->etb) != 0) {
-    fprintf(stderr, "Failed to enable ETB\n");
+  if (cs_sink_etr_setup(devices->etb, etr_ram_addr, etr_ram_size) != 0) {
+    fprintf(stderr, "Failed to setup ETR\n");
     return -1;
+  }
+  if (cs_sink_enable(devices->etb) != 0) {
+    fprintf(stderr, "Failed to enable ETR\n");
+    return -1;
+  }
+
+  if (devices->trace_sinks[0]) {
+    if (cs_sink_etf_setup(devices->trace_sinks[0], CS_ETB_RAM_MODE_HW_FIFO)
+        != 0) {
+      fprintf(stderr, "Failed to setup ETF\n");
+      return -1;
+    }
+    if (cs_sink_enable(devices->trace_sinks[0]) != 0) {
+      fprintf(stderr, "Failed to enable ETF\n");
+      return -1;
+    }
   }
 
   for (i = 0; i < board->n_cpu; ++i) {

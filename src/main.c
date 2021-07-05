@@ -11,12 +11,14 @@
 #include <unistd.h>
 #include <sched.h>
 #include <limits.h>
+#include <fcntl.h>
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#include <sys/stat.h>
 #include <sys/sysinfo.h>
 
 #include <linux/elf.h>
@@ -41,11 +43,14 @@
 
 #define DEFAULT_BOARD_NAME "Marvell ThunderX2"
 #define DEFAULT_TRACE_CPU 0
+#define DEFAULT_UDMABUF_NAME "udmabuf0"
 #define DEFAULT_ETF_SIZE 0x1000
 #define DEFAULT_TRACE_SIZE 0x80000
 #define DEFAULT_TRACE_NAME "cstrace.bin"
 #define DEFAULT_TRACE_ARGS_NAME "decoderargs.txt"
 
+unsigned long etr_ram_addr = 0;
+size_t etr_ram_size = 0;
 int etb_stop_on_flush = 1;
 pid_t trace_pid = 0;
 bool needs_rerun = false;
@@ -53,6 +58,7 @@ bool needs_rerun = false;
 static char *board_name = DEFAULT_BOARD_NAME;
 static const struct board *board;
 static struct cs_devices_t devices;
+static char *u_dma_buf_name = DEFAULT_UDMABUF_NAME;
 static bool forkserver_mode = false;
 static bool tracing_on = true;
 static bool polling_on = true;
@@ -111,12 +117,59 @@ static libcsdec_t init_decoder(void)
 
 static int init_trace(pid_t pid)
 {
+  const char *u_dma_buf_root = "/sys/class/u-dma-buf";
+
   int ret;
+  char u_dma_buf_path[PATH_MAX];
+  char tmp_path[PATH_MAX];
+  char attr[1024];
+  int fd;
+  struct stat sb;
   int nprocs;
   cpu_set_t *cpu_set;
   size_t setsize;
 
   ret = -1;
+
+  memset(u_dma_buf_path, '\0', sizeof(u_dma_buf_path));
+  snprintf(u_dma_buf_path, sizeof(u_dma_buf_path), "%s/%s",
+      u_dma_buf_root, u_dma_buf_name);
+  ret = stat(u_dma_buf_path, &sb);
+  if (stat(u_dma_buf_path, &sb) != 0 || (!S_ISDIR(sb.st_mode))) {
+    fprintf(stderr, "u-dma-buf device '%s' not found\n",
+        u_dma_buf_name);
+    return ret;
+  }
+
+  memset(tmp_path, '\0', sizeof(tmp_path));
+  snprintf(tmp_path, sizeof(tmp_path), "%s/%s/phys_addr",
+      u_dma_buf_root, u_dma_buf_name);
+  if ((fd = open(tmp_path, O_RDONLY)) < 0) {
+    perror("open");
+    return -1;
+  }
+
+  memset(attr, 0, sizeof(attr));
+  if (read(fd, attr, sizeof(attr)) < 0) {
+    perror("read");
+  }
+  sscanf(attr, "%lx", &etr_ram_addr);
+  close(fd);
+
+  memset(tmp_path, '\0', sizeof(tmp_path));
+  snprintf(tmp_path, sizeof(tmp_path), "%s/%s/size",
+      u_dma_buf_root, u_dma_buf_name);
+  if ((fd = open(tmp_path, O_RDONLY)) < 0) {
+    perror("open");
+    return -1;
+  }
+
+  memset(attr, 0, sizeof(attr));
+  if (read(fd, attr, sizeof(attr)) < 0) {
+    perror("read");
+  }
+  sscanf(attr, "%ld", &etr_ram_size);
+  close(fd);
 
   trace_buf = mmap(NULL, DEFAULT_TRACE_SIZE, PROT_READ | PROT_WRITE,
       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -296,6 +349,9 @@ static void stop_trace(void)
 
   for (i = 0; i < board->n_cpu; ++i) {
     cs_trace_disable(devices.ptm[i]);
+  }
+  if (devices.trace_sinks[0]) {
+    cs_sink_disable(devices.trace_sinks[0]);
   }
   cs_sink_disable(devices.etb);
 
