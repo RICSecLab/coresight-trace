@@ -36,6 +36,8 @@
 #include "afl.h"
 #include "config.h"
 
+#include "afl/common.h"
+
 #define RANGE_MAX (32)
 
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
@@ -73,6 +75,7 @@ static libcsdec_t decoder = NULL;
 static void *trace_buf = NULL;
 static size_t trace_buf_size = 0;
 static void *trace_buf_ptr = NULL;
+static bool decoding_on = false;
 static int count = 0;
 
 static pthread_cond_t trace_cond;
@@ -104,6 +107,15 @@ static libcsdec_t init_decoder(void)
   }
   for (i = 0; i < range_count; i++) {
     paths[i] = range[i].path;
+  }
+
+  if (!afl_area_ptr || afl_map_size == 0) {
+    afl_area_ptr = mmap(NULL, MAP_SIZE, PROT_READ | PROT_WRITE,
+        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (!afl_area_ptr) {
+      return (libcsdec_t)NULL;
+    }
+    afl_map_size = MAP_SIZE;
   }
 
   decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size, true);
@@ -234,7 +246,7 @@ static void fini_trace(void)
 
   cs_shutdown();
 
-  if (forkserver_mode) {
+  if (forkserver_mode || decoding_on) {
     decoder = decoder ? decoder : init_decoder();
     if (!decoder) {
       return;
@@ -245,7 +257,7 @@ static void fini_trace(void)
     return;
   }
 
-  if (forkserver_mode) {
+  if (forkserver_mode || decoding_on) {
     ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
       range_count, (struct libcsdec_memory_map *)range);
     if (ret != LIBCEDEC_SUCCESS) {
@@ -630,6 +642,7 @@ static void usage(char *argv0)
   fprintf(stderr, "  --cpu=INT\t\t\tbind traced process to CPU (default: %d)\n", trace_cpu);
   fprintf(stderr, "  --tracing={0,1}\t\tenable tracing (default: %d)\n", tracing_on);
   fprintf(stderr, "  --polling={0,1}\t\tenable ETF polling (default: %d)\n", polling_on);
+  fprintf(stderr, "  --decoding={0,1}\t\tenable trace decoding (default: %d)\n", decoding_on);
   fprintf(stderr, "  --export-config={0,1}\t\tenable exporting config (default: %d)\n", export_config);
   fprintf(stderr, "  --etf-stop-on-flush={0,1}\tenable ETF polling (default: %d)\n", etb_stop_on_flush);
   fprintf(stderr, "  --etf-threshold=FLOAT\t\tETF full threshold (default: %.1f)\n", etf_ram_usage_threshold);
@@ -678,6 +691,9 @@ int main(int argc, char *argv[])
     } else if (sscanf(argv[i], "--export-config=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
       export_config = n ? true : false;
+    } else if (sscanf(argv[i], "--decoding=%d%c", &n, &junk) == 1
+        && (n == 0 || n == 1)) {
+      decoding_on = n ? true : false;
     } else if (sscanf(argv[i], "--verbose=%d%c", &n, &junk) == 1
         && (n >= 0)) {
       registration_verbose = n;
