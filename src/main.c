@@ -639,6 +639,7 @@ static void usage(char *argv0)
   fprintf(stderr, "Usage: %s [OPTIONS] -- EXE [ARGS]\n", argv0);
   fprintf(stderr, "CoreSight process tracer\n");
   fprintf(stderr, "[OPTIONS]\n");
+  fprintf(stderr, "  --forkserver={0,1}\t\tenable AFL fork server mode (default: %d)\n", forkserver_mode);
   fprintf(stderr, "  --cpu=INT\t\t\tbind traced process to CPU (default: %d)\n", trace_cpu);
   fprintf(stderr, "  --tracing={0,1}\t\tenable tracing (default: %d)\n", tracing_on);
   fprintf(stderr, "  --polling={0,1}\t\tenable ETF polling (default: %d)\n", polling_on);
