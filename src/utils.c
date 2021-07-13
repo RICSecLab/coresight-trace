@@ -7,7 +7,12 @@ int get_trace_id(const char *hardware, int cpu)
   if (strcmp(hardware, "Marvell ThunderX2") == 0) {
     return 0x10 + (cpu % 28) * 4 + cpu / 28;
   } else if (strcmp(hardware, "Jetson TX2") == 0) {
-    return 0x10 + cpu;
+    if (cpu == 0) {
+      return 0x10 + cpu;
+    } else if (3 <= cpu && cpu <= 5) {
+      return 0x10 + cpu - 2;
+    }
+    return -1;
   } else if (strcmp(hardware, "Jetson Nano") == 0) {
     return 0x10 + cpu;
   }
