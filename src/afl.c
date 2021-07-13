@@ -15,21 +15,18 @@
 #include "proc-trace.h"
 #include "afl.h"
 
+#define AFL_EXEC_TRIAL_MAX 16
+
 #define TSL_FD (FORKSRV_FD - 1)
 
 static unsigned char dummy[MAP_SIZE];
 unsigned char *afl_area_ptr = dummy;
 
 static int forkserver_installed = 0;
-static int disable_caching = 1; /* FIXME: Caching is not available. */
 
 unsigned char afl_fork_child;
 unsigned int afl_forksrv_pid;
 unsigned char is_persistent;
-
-u8 *shared_buf;
-u32 *shared_buf_len;
-u8 sharedmem_fuzzing;
 
 unsigned int afl_inst_rms = MAP_SIZE;
 
@@ -38,38 +35,6 @@ unsigned int afl_map_size = MAP_SIZE;
 
 extern char **dec_args;
 extern bool needs_rerun;
-
-/* This is the other size of the same channel. Since timeouts are handled by
- * afl-fuzz simple killing the child, we can just wait until the pipe breaks. */
-static void afl_wait_tsl(int fd) {
-  if (disable_caching) {
-    return;
-  }
-}
-
-static void afl_map_shm_fuzz(void)
-{
-  char *id_str;
-
-  id_str = getenv(SHM_FUZZ_ENV_VAR);
-  if (id_str) {
-    u32 shm_id = atoi(id_str);
-    u8 *map = (u8 *)shmat(shm_id, NULL, 0);
-    if (!map || map == (void *)-1) {
-      perror("[AFL] ERROR: could not access fuzzing shared memory");
-      exit(1);
-    }
-    shared_buf_len = (u32 *)map;
-    shared_buf = map + sizeof(u32);
-
-    if (getenv("AFL_DEBUG")) {
-      fprintf(stderr, "[AFL] DEBUG: successfully got fuzzing shared memory\n");
-    } else {
-      fprintf(stderr, "[AFL] ERROR: variable for fuzzing shared memory is not set\n");
-      exit(1);
-    }
-  }
-}
 
 void afl_setup(void)
 {
@@ -133,6 +98,7 @@ void afl_forkserver(char *argv[])
   u8 child_stopped = 0;
   u32 was_killed;
   int status;
+  int trial;
 
   if (forkserver_installed == 1) {
     return;
@@ -142,9 +108,6 @@ void afl_forkserver(char *argv[])
   status = 0;
   if (MAP_SIZE <= FS_OPT_MAX_MAPSIZE) {
     status |= (FS_OPT_SET_MAPSIZE(MAP_SIZE) | FS_OPT_MAPSIZE);
-  }
-  if (sharedmem_fuzzing != 0) {
-    status |= FS_OPT_SHDMEM_FUZZ;
   }
   if (status) {
     status |= (FS_OPT_ENABLED);
@@ -163,22 +126,6 @@ void afl_forkserver(char *argv[])
   afl_forksrv_pid = getpid();
 
   first_run = 1;
-
-  if (sharedmem_fuzzing) {
-    if (read(FORKSRV_FD, &was_killed, 4) != 4) {
-      exit(2);
-    }
-
-    if ((was_killed & (0xffffffff & (FS_OPT_ENABLED | FS_OPT_SHDMEM_FUZZ))) ==
-        (FS_OPT_ENABLED | FS_OPT_SHDMEM_FUZZ)) {
-      afl_map_shm_fuzz();
-    } else {
-      fprintf(stderr,
-          "[AFL] ERROR: afl-fuzz is old and does not support"
-          " shmem input");
-      exit(1);
-    }
-  }
 
   /* All right, let's await orders... */
   while (1) {
@@ -205,6 +152,8 @@ void afl_forkserver(char *argv[])
       }
       close(t_fd[1]);
 
+      trial = 0;
+retry:
       child_pid = fork();
       if (child_pid < 0) {
         exit(4);
@@ -229,21 +178,22 @@ void afl_forkserver(char *argv[])
       child_stopped = 0;
     }
 
-    /* Parent. */
-    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
-      exit(5);
-    }
-
-    /* Collect translation requests until child dies and closes the pipe. */
-    afl_wait_tsl(t_fd[0]);
-
     parent(child_pid, &status);
 
     if (needs_rerun) {
-      fprintf(stderr, "[AFL] ERROR: failed to retrieve bitmap\n");
       needs_rerun = false;
       status = -1;
-      exit(11);
+      trial += 1;
+      if (trial < AFL_EXEC_TRIAL_MAX) {
+        goto retry;
+      }
+      fprintf(stderr, "[AFL] ERROR: failed to retrieve bitmap. trial: %d\n", trial);
+      exit(5);
+    }
+
+    /* Parent. */
+    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
+      exit(5);
     }
 
     /* In persistent mode, the child stops itself with SIGSTOP to indicate
