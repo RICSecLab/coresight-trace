@@ -10,3 +10,4 @@ tests/fib
 tests/fib-large
 tests/fib-num
 tests/loop
+tests/toy
