@@ -68,7 +68,6 @@ static int configure_etmv4_addr_range_cid(cs_device_t etm,
     struct addr_range *range, int range_count, unsigned long cid)
 {
     cs_etmv4_config_t tconfig;
-    struct addr_range sys_range;
     int error_count;
     size_t cididx;
     size_t addridx;
@@ -98,15 +97,6 @@ static int configure_etmv4_addr_range_cid(cs_device_t etm,
     addridx = 0;
     /* XXX: Assuming range[0] is the tracee itself. */
     set_etmv4_addr_range(&range[0], &tconfig.addr_comps[addridx],
-        (cididx << 4) | (0x1 << 2)); /* Add and enable Context ID filtering */
-    tconfig.addr_comps_acc_mask |= 0x3 << addridx;
-    tconfig.viiectlr |= 1 << (addridx / 2);
-
-    addridx = 2;
-    /* Add [ffff00000000-ffffffffffff] */
-    sys_range.start = 0xffff00000000;
-    sys_range.end = 0xffffffffffff;
-    set_etmv4_addr_range(&sys_range, &tconfig.addr_comps[addridx],
         (cididx << 4) | (0x1 << 2)); /* Add and enable Context ID filtering */
     tconfig.addr_comps_acc_mask |= 0x3 << addridx;
     tconfig.viiectlr |= 1 << (addridx / 2);
