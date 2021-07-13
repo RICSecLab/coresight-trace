@@ -549,6 +549,56 @@ void child(char *argv[])
   execvp(argv[0], argv);
 }
 
+void afl_start_trace(pid_t pid)
+{
+#if 0
+  pthread_t polling_thread;
+  int ret;
+
+  pthread_mutex_init(&trace_mutex, NULL);
+  pthread_cond_init(&trace_cond, NULL);;
+
+  if (polling_on) {
+    ret = pthread_create(&polling_thread, NULL, etb_polling, &pid);
+    if (ret != 0) {
+      return;
+    }
+  }
+
+  pthread_mutex_lock(&trace_mutex);
+  init_trace(pid);
+  if (tracing_on) {
+    start_trace();
+  }
+  pthread_mutex_unlock(&trace_mutex);
+#endif
+
+  init_trace(pid);
+  if (tracing_on) {
+    start_trace();
+  }
+}
+
+void afl_stop_trace(void)
+{
+#if 0
+  pthread_mutex_lock(&trace_mutex);
+  stop_trace();
+  fetch_trace();
+  fini_trace();
+  pthread_mutex_unlock(&trace_mutex);
+
+  pthread_cond_destroy(&trace_cond);
+  pthread_mutex_destroy(&trace_mutex);
+#endif
+
+  stop_trace();
+  fetch_trace();
+  fini_trace();
+
+  is_first_trace = true; /* XXX: To setup board again */
+}
+
 void parent(pid_t pid, int *child_status)
 {
   int wstatus;

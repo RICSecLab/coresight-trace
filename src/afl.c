@@ -17,7 +17,7 @@
 
 #define AFL_EXEC_TRIAL_MAX 16
 
-#define TSL_FD (FORKSRV_FD - 1)
+#define AFLCS_FORKSRV_FD (FORKSRV_FD - 3)
 
 static unsigned char dummy[MAP_SIZE];
 unsigned char *afl_area_ptr = dummy;
@@ -93,8 +93,11 @@ void afl_forkserver(char *argv[])
 {
   unsigned char tmp[4] = {0};
   int first_run;
+  int proxy_st_pipe[2];
+  int proxy_ctl_pipe[2];
+  int proxy_st_fd;
+  int proxy_ctl_fd;
   pid_t child_pid;
-  int t_fd[2];
   u8 child_stopped = 0;
   u32 was_killed;
   int status;
@@ -105,25 +108,60 @@ void afl_forkserver(char *argv[])
   }
   forkserver_installed = 1;
 
-  status = 0;
-  if (MAP_SIZE <= FS_OPT_MAX_MAPSIZE) {
-    status |= (FS_OPT_SET_MAPSIZE(MAP_SIZE) | FS_OPT_MAPSIZE);
+  if (pipe(proxy_st_pipe) || pipe(proxy_ctl_pipe)) {
+    fprintf(stderr, "[AFL] ERROR: pipe() failed\n");
+    exit(1);
   }
-  if (status) {
-    status |= (FS_OPT_ENABLED);
+
+  afl_forksrv_pid = fork();
+  if (afl_forksrv_pid < 0) {
+    fprintf(stderr, "[AFL] ERROR: fork() failed\n");
+    exit(2);
   }
+
+  if (!afl_forksrv_pid) {
+    /* Child process. Close descriptors and run free. */
+    if (dup2(proxy_ctl_pipe[0], AFLCS_FORKSRV_FD) < 0) {
+      fprintf(stderr, "[AFL] ERROR: dup2() failed\n");
+      exit(3);
+    }
+    if (dup2(proxy_st_pipe[1], AFLCS_FORKSRV_FD + 1) < 0) {
+      fprintf(stderr, "[AFL] ERROR: dup2() failed\n");
+      exit(4);
+    }
+    afl_fork_child = 1;
+    close(proxy_ctl_pipe[0]);
+    close(proxy_ctl_pipe[1]);
+    close(proxy_st_pipe[0]);
+    close(proxy_st_pipe[1]);
+    close(FORKSRV_FD);
+    close(FORKSRV_FD + 1);
+
+    execvp(argv[0], argv);
+
+    return;
+  }
+
+  /* Parent. */
+  close(proxy_ctl_pipe[0]);
+  close(proxy_st_pipe[1]);
+  proxy_ctl_fd = proxy_ctl_pipe[1];
+  proxy_st_fd = proxy_st_pipe[0];
+
+  if (read(proxy_st_fd, tmp, 4) != 4) {
+    exit(5);
+  }
+
+  memcpy(&status, tmp, 4);
   if (getenv("AFL_DEBUG")) {
     fprintf(stderr, "Debug: Sending status %08x\n", status);
   }
-  memcpy(tmp, &status, 4);
 
   /* Tell the parent that we're alive. If the parent doesn't want
    * to talk, assume that we're not running in forkserver mode. */
   if (write(FORKSRV_FD + 1, tmp, 4) != 4) {
-    return;
+    exit(6);
   }
-
-  afl_forksrv_pid = getpid();
 
   first_run = 1;
 
@@ -132,6 +170,10 @@ void afl_forkserver(char *argv[])
     /* Whoops, parent dead? */
     if (read(FORKSRV_FD, &was_killed, 4) != 4) {
       exit(2);
+    }
+
+    if (write(proxy_ctl_fd, &was_killed, 4) != 4) {
+      exit(3);
     }
 
     /* If we stopped the child in persistent mode, but there was a race
@@ -145,32 +187,10 @@ void afl_forkserver(char *argv[])
     }
 
     if (!child_stopped) {
-      /* Establish a channel with child to grab translation commands. We'll
-       * read from t_fd[0], child will write to TSL_FD. */
-      if (pipe(t_fd) || dup2(t_fd[1], TSL_FD) < 0) {
-        exit(3);
-      }
-      close(t_fd[1]);
-
-      trial = 0;
-retry:
-      child_pid = fork();
-      if (child_pid < 0) {
+      /* Wait for target by reading from the pipe. */
+      if (read(proxy_st_fd, &child_pid, 4) != 4) {
         exit(4);
       }
-
-      if (!child_pid) {
-        /* Child process. Close descriptors and run free. */
-        afl_fork_child = 1;
-        close(FORKSRV_FD);
-        close(FORKSRV_FD + 1);
-        close(t_fd[0]);
-        child(argv);
-        return;
-      }
-
-      /* Parent. */
-      close(TSL_FD);
     } else {
       /* Special handling for persistent mode: if the child is alive but
        * currently stopped, simple restart it with SIGCONT. */
@@ -178,21 +198,26 @@ retry:
       child_stopped = 0;
     }
 
-    parent(child_pid, &status);
+    afl_start_trace(child_pid);
 
-    if (needs_rerun) {
-      needs_rerun = false;
-      status = -1;
-      trial += 1;
-      if (trial < AFL_EXEC_TRIAL_MAX) {
-        goto retry;
-      }
-      fprintf(stderr, "[AFL] ERROR: failed to retrieve bitmap. trial: %d\n", trial);
-      exit(5);
-    }
+    /* Resume child process. */
+    kill(child_pid, SIGCONT);
 
     /* Parent. */
     if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
+      exit(5);
+    }
+
+    if (read(proxy_st_fd, &status, 4) != 4) {
+      exit(6);
+    }
+
+    afl_stop_trace();
+
+    if (needs_rerun) {
+      fprintf(stderr, "[AFL] ERROR: failed to retrieve bitmap. trial: %d\n", trial);
+      needs_rerun = false;
+      status = -1;
       exit(5);
     }
 
