@@ -118,7 +118,7 @@ static libcsdec_t init_decoder(void)
     afl_map_size = MAP_SIZE;
   }
 
-  decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size, true);
+  decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size);
 
   if (paths) {
     free(paths);
