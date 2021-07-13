@@ -4,3 +4,6 @@
 [submodule "coresight-decoder"]
 	path = coresight-decoder
 	url = git@github.com:RICSecLab/coresight-decoder.git
+[submodule "udmabuf"]
+	path = udmabuf
+	url = https://github.com/ikwzm/udmabuf.git
