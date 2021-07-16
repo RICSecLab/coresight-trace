@@ -54,7 +54,6 @@
 unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
 int etb_stop_on_flush = 1;
-pid_t trace_pid = 0;
 bool needs_rerun = false;
 
 static char *board_name = DEFAULT_BOARD_NAME;
@@ -95,6 +94,39 @@ struct mmap_params {
   off_t offset;
 };
 
+static int set_cpu_affinity(pid_t pid)
+{
+  int ret;
+  int nprocs;
+  cpu_set_t *cpu_set;
+  size_t setsize;
+
+  ret = -1;
+
+  nprocs = get_nprocs();
+  cpu_set = CPU_ALLOC(nprocs);
+  if (!cpu_set) {
+    perror("CPU_ALLOC");
+    goto exit;
+  }
+  setsize = CPU_ALLOC_SIZE(nprocs);
+  CPU_ZERO_S(setsize, cpu_set);
+  CPU_SET_S(trace_cpu, setsize,  cpu_set);
+  if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
+    perror("sched_setaffinity");
+    goto exit;
+  }
+
+  ret = 0;
+
+exit:
+  if (cpu_set) {
+    CPU_FREE(cpu_set);
+  }
+
+  return ret;
+}
+
 static libcsdec_t init_decoder(void)
 {
   const char **paths;
@@ -127,6 +159,83 @@ static libcsdec_t init_decoder(void)
   return decoder;
 }
 
+static int init_trace_buf(void)
+{
+  trace_buf = mmap(NULL, DEFAULT_TRACE_SIZE, PROT_READ | PROT_WRITE,
+      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (!trace_buf) {
+    perror("mmap");
+    return -1;
+  }
+  trace_buf_size = DEFAULT_TRACE_SIZE;
+  trace_buf_ptr = trace_buf;
+
+  return 0;
+}
+
+#if 0
+static int decode_trace_from_dev(void)
+{
+  const char *u_dma_buf_root = "/dev";
+
+  cs_device_t etb;
+  int len;
+  char u_dma_buf_path[PATH_MAX];
+  int fd;
+  void *udmabuf;
+  libcsdec_result_t ret;
+  int trace_id;
+
+  etb = devices.etb;
+  len = cs_get_buffer_unread_bytes(etb);
+
+  memset(u_dma_buf_path, '\0', sizeof(u_dma_buf_path));
+  snprintf(u_dma_buf_path, sizeof(u_dma_buf_path), "%s/%s",
+      u_dma_buf_root, u_dma_buf_name);
+  if ((fd = open(u_dma_buf_path, O_RDONLY)) < 0) {
+    perror("open");
+    return -1;
+  }
+
+  udmabuf = mmap(NULL, (size_t)len, PROT_READ, MAP_SHARED, fd, 0);
+  if (!udmabuf) {
+    perror("mmap");
+    goto exit;
+  }
+
+  if (forkserver_mode || decoding_on) {
+    decoder = decoder ? decoder : init_decoder();
+    if (!decoder) {
+      goto exit;
+    }
+  }
+
+  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+    goto exit;
+  }
+
+  if (forkserver_mode || decoding_on) {
+    ret = libcsdec_write_bitmap(decoder, udmabuf, (size_t)len, trace_id,
+      range_count, (struct libcsdec_memory_map *)range);
+    if (ret != LIBCEDEC_SUCCESS) {
+      needs_rerun = true;
+    }
+    cs_empty_trace_buffer(etb);
+  }
+
+exit:
+  if (udmabuf) {
+    munmap(udmabuf, len);
+  }
+
+  if (fd > 0) {
+    close(fd);
+  }
+
+  return 0;
+}
+#endif
+
 static int init_trace(pid_t pid)
 {
   const char *u_dma_buf_root = "/sys/class/u-dma-buf";
@@ -137,9 +246,6 @@ static int init_trace(pid_t pid)
   char attr[1024];
   int fd;
   struct stat sb;
-  int nprocs;
-  cpu_set_t *cpu_set;
-  size_t setsize;
 
   ret = -1;
 
@@ -183,16 +289,6 @@ static int init_trace(pid_t pid)
   sscanf(attr, "%ld", &etr_ram_size);
   close(fd);
 
-  trace_buf = mmap(NULL, DEFAULT_TRACE_SIZE, PROT_READ | PROT_WRITE,
-      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (!trace_buf) {
-    perror("mmap");
-    goto exit;
-  }
-  trace_buf_size = DEFAULT_TRACE_SIZE;
-  trace_buf_ptr = trace_buf;
-
-  trace_pid = pid;
   if ((range_count = setup_mem_range(pid, range, RANGE_MAX)) < 0) {
     fprintf(stderr, "setup_mem_range() failed\n");
     goto exit;
@@ -205,27 +301,9 @@ static int init_trace(pid_t pid)
     }
   }
 
-  nprocs = get_nprocs();
-  cpu_set = CPU_ALLOC(nprocs);
-  if (!cpu_set) {
-    perror("CPU_ALLOC");
-    goto exit;
-  }
-  setsize = CPU_ALLOC_SIZE(nprocs);
-  CPU_ZERO_S(setsize, cpu_set);
-  CPU_SET_S(trace_cpu, setsize,  cpu_set);
-  if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
-    perror("sched_setaffinity");
-    goto exit;
-  }
-
   ret = 0;
 
 exit:
-  if (cpu_set) {
-    CPU_FREE(cpu_set);
-  }
-
   if (tracing_on && ret < 0) {
     cs_shutdown();
   }
@@ -309,18 +387,18 @@ exit:
   if (trace_buf) {
     munmap(trace_buf, trace_buf_size);
   }
-
-  count++;
 }
 
-static int start_trace(void)
+static int start_trace(pid_t pid)
 {
   int ret;
 
   ret = -1;
 
   if (is_first_trace) {
-    if (configure_trace(board, &devices, range, range_count) < 0) {
+    /* Do not specify traced PID in forkserver mode */
+    if (configure_trace(board, &devices, range, range_count,
+          forkserver_mode ? 0 : pid) < 0) {
       fprintf(stderr, "configure_trace() failed\n");
       goto exit;
     }
@@ -386,10 +464,10 @@ static void fetch_trace(void)
   int n;
 
   etb = devices.etb;
+  len = cs_get_buffer_unread_bytes(etb);
 
   trace_buf_ptr = (void *)ALIGN_UP((unsigned long)trace_buf_ptr, 0x8);
 
-  len = cs_get_buffer_unread_bytes(etb);
   buf_remain = trace_buf_size - (size_t)((char *)trace_buf_ptr - (char *)trace_buf);
   if ((size_t)len > buf_remain) {
     new_trace_buf_size = trace_buf_size * 2;
@@ -415,6 +493,38 @@ static void fetch_trace(void)
   }
   cs_empty_trace_buffer(etb);
   trace_buf_ptr = (void *)((char *)trace_buf_ptr + n);
+}
+
+static int decode_trace(void)
+{
+  cs_device_t etb;
+  libcsdec_result_t ret;
+  int trace_id;
+
+  etb = devices.etb;
+
+  if (forkserver_mode || decoding_on) {
+    decoder = decoder ? decoder : init_decoder();
+    if (!decoder) {
+      return -1;
+    }
+  }
+
+  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+    return -1;
+  }
+
+  if (forkserver_mode || decoding_on) {
+    ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
+      range_count, (struct libcsdec_memory_map *)range);
+    cs_empty_trace_buffer(etb);
+    if (ret != LIBCEDEC_SUCCESS) {
+      needs_rerun = true;
+      return -1;
+    }
+  }
+
+  return 0;
 }
 
 static void read_pid_fd_path(pid_t pid, int fd, char *buf, size_t size)
@@ -549,54 +659,29 @@ void child(char *argv[])
   execvp(argv[0], argv);
 }
 
+void afl_init_trace(pid_t pid)
+{
+  init_trace(pid);
+}
+
 void afl_start_trace(pid_t pid)
 {
-#if 0
-  pthread_t polling_thread;
-  int ret;
-
-  pthread_mutex_init(&trace_mutex, NULL);
-  pthread_cond_init(&trace_cond, NULL);;
-
-  if (polling_on) {
-    ret = pthread_create(&polling_thread, NULL, etb_polling, &pid);
-    if (ret != 0) {
-      return;
-    }
-  }
-
-  pthread_mutex_lock(&trace_mutex);
-  init_trace(pid);
+  set_cpu_affinity(pid);
+  init_trace_buf();
   if (tracing_on) {
-    start_trace();
-  }
-  pthread_mutex_unlock(&trace_mutex);
-#endif
-
-  init_trace(pid);
-  if (tracing_on) {
-    start_trace();
+    start_trace(pid);
   }
 }
 
 void afl_stop_trace(void)
 {
-#if 0
-  pthread_mutex_lock(&trace_mutex);
   stop_trace();
   fetch_trace();
-  fini_trace();
-  pthread_mutex_unlock(&trace_mutex);
-
-  pthread_cond_destroy(&trace_cond);
-  pthread_mutex_destroy(&trace_mutex);
-#endif
-
-  stop_trace();
-  fetch_trace();
-  fini_trace();
-
-  is_first_trace = true; /* XXX: To setup board again */
+  decode_trace();
+  if (trace_buf) {
+    munmap(trace_buf, trace_buf_size);
+  }
+  count += 1;
 }
 
 void parent(pid_t pid, int *child_status)
@@ -617,9 +702,10 @@ void parent(pid_t pid, int *child_status)
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     pthread_mutex_lock(&trace_mutex);
+    set_cpu_affinity(pid);
     init_trace(pid);
     if (tracing_on) {
-      start_trace();
+      start_trace(pid);
     }
     pthread_mutex_unlock(&trace_mutex);
   }
@@ -668,7 +754,7 @@ void parent(pid_t pid, int *child_status)
         pthread_mutex_lock(&trace_mutex);
         stop_trace();
         fetch_trace();
-        start_trace();
+        start_trace(pid);
         pthread_cond_signal(&trace_cond);
         pthread_mutex_unlock(&trace_mutex);
       }
@@ -678,7 +764,6 @@ void parent(pid_t pid, int *child_status)
   pthread_cond_destroy(&trace_cond);
   pthread_mutex_destroy(&trace_mutex);
 
-  is_first_trace = true; /* XXX: To setup board again */
   if (child_status) {
     *child_status = wstatus;
   }

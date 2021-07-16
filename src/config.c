@@ -6,7 +6,6 @@ const bool return_stack = false;
 
 extern unsigned long etr_ram_addr;
 extern size_t etr_ram_size;
-extern pid_t trace_pid;
 extern int etb_stop_on_flush;
 extern int registration_verbose;
 
@@ -81,23 +80,29 @@ static int configure_etmv4_addr_range_cid(cs_device_t etm,
     if (tconfig.scv4->idr2.bits.vmidsize > 0)
         /* XXX: VMID trace must be disabled to use context ID trace only. */
         tconfig.configr.bits.vmid = 0;
-    if (tconfig.scv4->idr2.bits.cidsize > 0)
+    if (tconfig.scv4->idr2.bits.cidsize > 0 && cid > 0) {
         tconfig.configr.bits.cid = 1;	/* context ID trace enable. */
+    } else {
+        tconfig.configr.bits.cid = 0;	/* context ID trace disable. */
+    }
 
     if (return_stack)
         tconfig.configr.bits.rs = 1; /* set the return stack */
 
-    cididx = 0;
-    tconfig.cxid_comps[cididx].cidcvr_l = cid & 0xFFFFFFFF;
-    tconfig.cxid_comps[cididx].cidcvr_h = (cid >> 32) & 0xFFFFFFFF;
-    tconfig.cidcctlr0 &= ~(1 << cididx);
-    tconfig.cxid_comps_acc_mask |= (1 << cididx);
-    tconfig.flags |= CS_ETMC_CXID_COMP;
+    if (cid > 0) {
+        cididx = 0;
+        tconfig.cxid_comps[cididx].cidcvr_l = cid & 0xFFFFFFFF;
+        tconfig.cxid_comps[cididx].cidcvr_h = (cid >> 32) & 0xFFFFFFFF;
+        tconfig.cidcctlr0 &= ~(1 << cididx);
+        tconfig.cxid_comps_acc_mask |= (1 << cididx);
+        tconfig.flags |= CS_ETMC_CXID_COMP;
+    }
 
     addridx = 0;
     /* XXX: Assuming range[0] is the tracee itself. */
+    /* Set and enable Context ID filtering */
     set_etmv4_addr_range(&range[0], &tconfig.addr_comps[addridx],
-        (cididx << 4) | (0x1 << 2)); /* Add and enable Context ID filtering */
+        cid > 0 ? (cididx << 4) | (0x1 << 2) : 0);
     tconfig.addr_comps_acc_mask |= 0x3 << addridx;
     tconfig.viiectlr |= 1 << (addridx / 2);
 
@@ -162,7 +167,7 @@ int init_etm(cs_device_t dev)
 }
 
 int configure_trace(const struct board *board, struct cs_devices_t *devices,
-    struct addr_range *range, int range_count)
+    struct addr_range *range, int range_count, pid_t pid)
 {
     int i, r, error_count;
 
@@ -194,7 +199,8 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
     for (i = 0; i < board->n_cpu; ++i) {
         if (CS_ETMVERSION_MAJOR(cs_etm_get_version(devices->ptm[i])) >=
             CS_ETMVERSION_ETMv4) {
-            r = configure_etmv4_addr_range_cid(devices->ptm[i], range, range_count, (unsigned long)trace_pid);
+            r = configure_etmv4_addr_range_cid(devices->ptm[i], range,
+                range_count, (unsigned long)pid);
         } else {
             fprintf(stderr, "Unsupported ETM for CPU #%d\n", i);
             continue;

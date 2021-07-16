@@ -180,6 +180,9 @@ void afl_forkserver(char *argv[])
       }
     }
 
+    trial = 0;
+
+retry:
     if (!child_stopped) {
       /* Wait for target by reading from the pipe. */
       if (read(proxy_st_fd, &child_pid, 4) != 4) {
@@ -192,15 +195,13 @@ void afl_forkserver(char *argv[])
       child_stopped = 0;
     }
 
+    if (first_run) {
+      afl_init_trace(child_pid);
+    }
     afl_start_trace(child_pid);
 
     /* Resume child process. */
     kill(child_pid, SIGCONT);
-
-    /* Parent. */
-    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
-      exit(5);
-    }
 
     if (read(proxy_st_fd, &status, 4) != 4) {
       exit(6);
@@ -211,7 +212,16 @@ void afl_forkserver(char *argv[])
     if (needs_rerun) {
       fprintf(stderr, "[AFL] ERROR: failed to retrieve bitmap. trial: %d\n", trial);
       needs_rerun = false;
+      trial += 1;
       status = -1;
+      if (trial > AFL_EXEC_TRIAL_MAX) {
+        exit(5);
+      }
+      goto retry;
+    }
+
+    /* Parent. */
+    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
       exit(5);
     }
 
