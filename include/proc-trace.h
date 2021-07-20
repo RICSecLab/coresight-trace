@@ -5,7 +5,7 @@
 
 #include <sys/types.h>
 
-void afl_init_trace(pid_t pid);
+void afl_init_trace(pid_t afl_forksrv_pid, pid_t pid);
 void afl_start_trace(pid_t pid);
 void afl_stop_trace(void);
 

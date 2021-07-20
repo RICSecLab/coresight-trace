@@ -50,12 +50,6 @@ void afl_setup(void)
   char *inst_r;
   int shm_id;
 
-  /* XXX: proc-trace uses its own CPU affinity settings */
-  if (!getenv("AFL_NO_AFFINITY")) {
-    fprintf(stderr, "[AFL] ERROR: AFL_NO_AFFINITY must be set to use CoreSight mode\n");
-    exit(1);
-  }
-
   setenv("__AFLCS_ENABLE", "1", 0);
 
   inst_r = getenv("AFL_INST_RATIO");
@@ -204,13 +198,13 @@ retry:
       child_stopped = 0;
     }
 
+    /* Parent. */
     if (first_run) {
-      afl_init_trace(child_pid);
+      afl_init_trace(afl_forksrv_pid, child_pid);
       first_run = 0;
     }
     afl_start_trace(child_pid);
 
-    /* Parent. */
     if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
       afl_exit(11);
     }

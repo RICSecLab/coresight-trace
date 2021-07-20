@@ -63,7 +63,7 @@ static char *u_dma_buf_name = DEFAULT_UDMABUF_NAME;
 static bool forkserver_mode = false;
 static bool tracing_on = true;
 static bool polling_on = true;
-static int trace_cpu = DEFAULT_TRACE_CPU;
+static int trace_cpu = -1;
 static bool trace_started = false;
 static bool is_first_trace = true;
 static float etf_ram_usage_threshold = 0.8;
@@ -94,6 +94,109 @@ struct mmap_params {
   off_t offset;
 };
 
+static int get_preferred_cpu(pid_t pid)
+{
+  int ret;
+  int i;
+  int nprocs;
+  cpu_set_t *cpu_set;
+  size_t setsize;
+  int pid_binded_cpu;
+  int preferred_cpu;
+  int cpu;
+  FILE *fp;
+  char core_cpus_list_path[PATH_MAX];
+  char *token;
+  size_t n;
+  ssize_t readn;
+
+  ret = -1;
+  cpu_set = NULL;
+  pid_binded_cpu = -1;
+  preferred_cpu = -1;
+  fp = NULL;
+  token = NULL;
+
+  nprocs = get_nprocs();
+  cpu_set = CPU_ALLOC(nprocs);
+  if (!cpu_set) {
+    perror("CPU_ALLOC");
+    goto exit;
+  }
+  setsize = CPU_ALLOC_SIZE(nprocs);
+  CPU_ZERO_S(setsize, cpu_set);
+  if (sched_getaffinity(pid, setsize, cpu_set) < 0) {
+    perror("sched_getaffinity");
+    goto exit;
+  }
+
+  if (CPU_COUNT_S(setsize, cpu_set) != 1) {
+    /* The process is not bind to a single CPU */
+    goto exit;
+  }
+
+  for (i = 0; i < nprocs; i++) {
+    if (CPU_ISSET_S(i, setsize, cpu_set)) {
+      pid_binded_cpu = i;
+      break;
+    }
+  }
+
+  if (pid_binded_cpu < 0) {
+    goto exit;
+  }
+
+  memset(core_cpus_list_path, 0, sizeof(core_cpus_list_path));
+  snprintf(core_cpus_list_path, sizeof(core_cpus_list_path),
+      "/sys/devices/system/cpu/cpu%d/topology/core_cpus_list",
+      pid_binded_cpu);
+
+  fp = fopen(core_cpus_list_path, "r");
+  if (!fp) {
+    perror("fopen");
+    goto exit;
+  }
+
+  token = NULL;
+  n = 0;
+  while ((readn = getdelim(&token, &n, ',', fp)) != -1) {
+    if (readn > 1 && token[readn - 1] != '\0') {
+      token[readn - 1] = '\0';
+    }
+    cpu = (int)strtol(token, NULL, 0);
+    if (cpu == LONG_MIN || cpu == LONG_MAX) {
+      perror("strtol");
+      continue;
+    }
+    if (cpu != pid_binded_cpu) {
+      preferred_cpu = cpu;
+      break;
+    }
+  }
+
+  if (preferred_cpu < 0) {
+    fprintf(stderr, "Could not find preferred CPU core\n");
+    preferred_cpu = -1;
+  }
+
+  ret = preferred_cpu;
+
+exit:
+  if (token) {
+    free(token);
+  }
+
+  if (fp) {
+    fclose(fp);
+  }
+
+  if (cpu_set) {
+    CPU_FREE(cpu_set);
+  }
+
+  return ret;
+}
+
 static int set_cpu_affinity(pid_t pid)
 {
   int ret;
@@ -102,6 +205,10 @@ static int set_cpu_affinity(pid_t pid)
   size_t setsize;
 
   ret = -1;
+
+  if (trace_cpu < 0) {
+    trace_cpu = DEFAULT_TRACE_CPU;
+  }
 
   nprocs = get_nprocs();
   cpu_set = CPU_ALLOC(nprocs);
@@ -659,8 +766,14 @@ void child(char *argv[])
   execvp(argv[0], argv);
 }
 
-void afl_init_trace(pid_t pid)
+void afl_init_trace(pid_t afl_forksrv_pid, pid_t pid)
 {
+  int preferred_cpu;
+
+  if (trace_cpu < 0) {
+    preferred_cpu = get_preferred_cpu(afl_forksrv_pid);
+    trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
+  }
   init_trace(pid);
 }
 
