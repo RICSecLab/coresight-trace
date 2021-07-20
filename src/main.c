@@ -94,62 +94,48 @@ struct mmap_params {
   off_t offset;
 };
 
-static int get_preferred_cpu(pid_t pid)
+static cpu_set_t *alloc_cpu_set(cpu_set_t **cpu_set, size_t *setsize)
+{
+  int nprocs;
+
+  if (!cpu_set || !setsize) {
+    return NULL;
+  }
+
+  nprocs = get_nprocs();
+  *cpu_set = CPU_ALLOC(nprocs);
+  if (!(*cpu_set)) {
+    perror("CPU_ALLOC");
+    return NULL;
+  }
+
+  *setsize = CPU_ALLOC_SIZE(nprocs);
+  CPU_ZERO_S(*setsize, *cpu_set);
+
+  return *cpu_set;
+}
+
+static int set_core_cpus(int cpu, cpu_set_t *cpu_set, size_t setsize)
 {
   int ret;
-  int i;
-  int nprocs;
-  cpu_set_t *cpu_set;
-  size_t setsize;
-  int pid_binded_cpu;
-  int preferred_cpu;
-  int cpu;
   FILE *fp;
   char core_cpus_list_path[PATH_MAX];
   char *token;
   size_t n;
   ssize_t readn;
+  int core_cpu;
 
   ret = -1;
-  cpu_set = NULL;
-  pid_binded_cpu = -1;
-  preferred_cpu = -1;
   fp = NULL;
   token = NULL;
 
-  nprocs = get_nprocs();
-  cpu_set = CPU_ALLOC(nprocs);
-  if (!cpu_set) {
-    perror("CPU_ALLOC");
-    goto exit;
-  }
-  setsize = CPU_ALLOC_SIZE(nprocs);
-  CPU_ZERO_S(setsize, cpu_set);
-  if (sched_getaffinity(pid, setsize, cpu_set) < 0) {
-    perror("sched_getaffinity");
-    goto exit;
-  }
-
-  if (CPU_COUNT_S(setsize, cpu_set) != 1) {
-    /* The process is not bind to a single CPU */
-    goto exit;
-  }
-
-  for (i = 0; i < nprocs; i++) {
-    if (CPU_ISSET_S(i, setsize, cpu_set)) {
-      pid_binded_cpu = i;
-      break;
-    }
-  }
-
-  if (pid_binded_cpu < 0) {
+  if (!cpu_set || !setsize) {
     goto exit;
   }
 
   memset(core_cpus_list_path, 0, sizeof(core_cpus_list_path));
   snprintf(core_cpus_list_path, sizeof(core_cpus_list_path),
-      "/sys/devices/system/cpu/cpu%d/topology/core_cpus_list",
-      pid_binded_cpu);
+      "/sys/devices/system/cpu/cpu%d/topology/core_cpus_list", cpu);
 
   fp = fopen(core_cpus_list_path, "r");
   if (!fp) {
@@ -163,23 +149,15 @@ static int get_preferred_cpu(pid_t pid)
     if (readn > 1 && token[readn - 1] != '\0') {
       token[readn - 1] = '\0';
     }
-    cpu = (int)strtol(token, NULL, 0);
-    if (cpu == LONG_MIN || cpu == LONG_MAX) {
+    core_cpu = (int)strtol(token, NULL, 0);
+    if (core_cpu == LONG_MIN || core_cpu == LONG_MAX) {
       perror("strtol");
-      continue;
+      goto exit;
     }
-    if (cpu != pid_binded_cpu) {
-      preferred_cpu = cpu;
-      break;
-    }
+    CPU_SET_S(core_cpu, setsize, cpu_set);
   }
 
-  if (preferred_cpu < 0) {
-    fprintf(stderr, "Could not find preferred CPU core\n");
-    preferred_cpu = -1;
-  }
-
-  ret = preferred_cpu;
+  ret = 0;
 
 exit:
   if (token) {
@@ -188,6 +166,61 @@ exit:
 
   if (fp) {
     fclose(fp);
+  }
+
+  return ret;
+}
+
+/* Find CPU core not in the same group of CPU binded to the PID process. */
+static int get_preferred_cpu(pid_t pid)
+{
+  int ret;
+  int i;
+  cpu_set_t *cpu_set;
+  cpu_set_t *core_cpu_set;
+  size_t setsize;
+  size_t core_setsize;
+  int nprocs;
+  int preferred_cpu;
+
+  ret = -1;
+  cpu_set = NULL;
+  core_cpu_set = NULL;
+  preferred_cpu = -1;
+
+  if (!alloc_cpu_set(&cpu_set, &setsize)) {
+    goto exit;
+  }
+  if (sched_getaffinity(pid, setsize, cpu_set) < 0) {
+    perror("sched_getaffinity");
+    goto exit;
+  }
+
+  nprocs = get_nprocs();
+  if (!alloc_cpu_set(&core_cpu_set, &core_setsize)) {
+    goto exit;
+  }
+  for (i = 0; i < nprocs; i++) {
+    if (CPU_ISSET_S(i, setsize, cpu_set)) {
+      if (set_core_cpus(i, core_cpu_set, core_setsize) < 0) {
+        fprintf(stderr, "Failed to set related core CPU\n");
+        goto exit;
+      }
+    }
+  }
+
+  for (i = 0; i < nprocs; i++) {
+    if (!CPU_ISSET_S(i, core_setsize, core_cpu_set)) {
+      preferred_cpu = i;
+      break;
+    }
+  }
+
+  ret = preferred_cpu;
+
+exit:
+  if (core_cpu_set) {
+    CPU_FREE(core_cpu_set);
   }
 
   if (cpu_set) {
@@ -200,7 +233,6 @@ exit:
 static int set_cpu_affinity(pid_t pid)
 {
   int ret;
-  int nprocs;
   cpu_set_t *cpu_set;
   size_t setsize;
 
@@ -210,14 +242,9 @@ static int set_cpu_affinity(pid_t pid)
     trace_cpu = DEFAULT_TRACE_CPU;
   }
 
-  nprocs = get_nprocs();
-  cpu_set = CPU_ALLOC(nprocs);
-  if (!cpu_set) {
-    perror("CPU_ALLOC");
+  if (!alloc_cpu_set(&cpu_set, &setsize)) {
     goto exit;
   }
-  setsize = CPU_ALLOC_SIZE(nprocs);
-  CPU_ZERO_S(setsize, cpu_set);
   CPU_SET_S(trace_cpu, setsize,  cpu_set);
   if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
     perror("sched_setaffinity");
