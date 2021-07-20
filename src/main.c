@@ -703,6 +703,7 @@ void parent(pid_t pid, int *child_status)
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     pthread_mutex_lock(&trace_mutex);
     set_cpu_affinity(pid);
+    init_trace_buf();
     init_trace(pid);
     if (tracing_on) {
       start_trace(pid);
