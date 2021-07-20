@@ -48,6 +48,8 @@ void afl_setup(void)
     exit(1);
   }
 
+  setenv("__AFLCS_ENABLE", "1", 0);
+
   inst_r = getenv("AFL_INST_RATIO");
   if (inst_r) {
     unsigned int r;
@@ -161,11 +163,13 @@ void afl_forkserver(char *argv[])
 
   /* All right, let's await orders... */
   while (1) {
+    trial = 0;
     /* Whoops, parent dead? */
     if (read(FORKSRV_FD, &was_killed, 4) != 4) {
       exit(2);
     }
 
+retry:
     if (write(proxy_ctl_fd, &was_killed, 4) != 4) {
       exit(3);
     }
@@ -180,9 +184,6 @@ void afl_forkserver(char *argv[])
       }
     }
 
-    trial = 0;
-
-retry:
     if (!child_stopped) {
       /* Wait for target by reading from the pipe. */
       if (read(proxy_st_fd, &child_pid, 4) != 4) {
@@ -197,6 +198,7 @@ retry:
 
     if (first_run) {
       afl_init_trace(child_pid);
+      first_run = 0;
     }
     afl_start_trace(child_pid);
 
@@ -234,8 +236,6 @@ retry:
       fprintf(stderr, "[AFL] ERROR: no persistent iteration executed\n");
       exit(12);
     }
-
-    first_run = 0;
 
     if (write(FORKSRV_FD + 1, &status, 4) != 4) {
       exit(7);
