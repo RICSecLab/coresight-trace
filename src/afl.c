@@ -36,6 +36,14 @@ unsigned int afl_map_size = MAP_SIZE;
 extern char **dec_args;
 extern bool needs_rerun;
 
+static void afl_exit(int status)
+{
+  if (afl_forksrv_pid) {
+    kill(afl_forksrv_pid, SIGKILL);
+    exit(status);
+  }
+}
+
 void afl_setup(void)
 {
   char *id_str;
@@ -145,7 +153,7 @@ void afl_forkserver(char *argv[])
   proxy_st_fd = proxy_st_pipe[0];
 
   if (read(proxy_st_fd, tmp, 4) != 4) {
-    exit(5);
+    afl_exit(5);
   }
 
   memcpy(&status, tmp, 4);
@@ -156,7 +164,7 @@ void afl_forkserver(char *argv[])
   /* Tell the parent that we're alive. If the parent doesn't want
    * to talk, assume that we're not running in forkserver mode. */
   if (write(FORKSRV_FD + 1, tmp, 4) != 4) {
-    exit(6);
+    afl_exit(6);
   }
 
   first_run = 1;
@@ -166,12 +174,12 @@ void afl_forkserver(char *argv[])
     trial = 0;
     /* Whoops, parent dead? */
     if (read(FORKSRV_FD, &was_killed, 4) != 4) {
-      exit(2);
+      afl_exit(7);
     }
 
 retry:
     if (write(proxy_ctl_fd, &was_killed, 4) != 4) {
-      exit(3);
+      afl_exit(8);
     }
 
     /* If we stopped the child in persistent mode, but there was a race
@@ -180,14 +188,14 @@ retry:
     if (child_stopped && was_killed) {
       child_stopped = 0;
       if (waitpid(child_pid, &status, 0) < 0) {
-        exit(8);
+        afl_exit(9);
       }
     }
 
     if (!child_stopped) {
       /* Wait for target by reading from the pipe. */
       if (read(proxy_st_fd, &child_pid, 4) != 4) {
-        exit(4);
+        afl_exit(10);
       }
     } else {
       /* Special handling for persistent mode: if the child is alive but
@@ -202,30 +210,19 @@ retry:
     }
     afl_start_trace(child_pid);
 
+    /* Parent. */
+    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
+      afl_exit(11);
+    }
+
     /* Resume child process. */
     kill(child_pid, SIGCONT);
 
     if (read(proxy_st_fd, &status, 4) != 4) {
-      exit(6);
+      afl_exit(12);
     }
 
     afl_stop_trace();
-
-    if (needs_rerun) {
-      fprintf(stderr, "[AFL] ERROR: failed to retrieve bitmap. trial: %d\n", trial);
-      needs_rerun = false;
-      trial += 1;
-      status = -1;
-      if (trial > AFL_EXEC_TRIAL_MAX) {
-        exit(5);
-      }
-      goto retry;
-    }
-
-    /* Parent. */
-    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
-      exit(5);
-    }
 
     /* In persistent mode, the child stops itself with SIGSTOP to indicate
      * a successfull run. In this case, we want to wake it up without forking
@@ -234,11 +231,21 @@ retry:
       child_stopped = 1;
     } else if (first_run && is_persistent) {
       fprintf(stderr, "[AFL] ERROR: no persistent iteration executed\n");
-      exit(12);
+      afl_exit(13);
     }
 
     if (write(FORKSRV_FD + 1, &status, 4) != 4) {
-      exit(7);
+      afl_exit(14);
+    }
+
+    if (needs_rerun) {
+      needs_rerun = false;
+      trial += 1;
+      if (trial > AFL_EXEC_TRIAL_MAX) {
+        fprintf(stderr, "[AFL] ERROR: failed to retrieve bitmap.\n");
+        afl_exit(15);
+      }
+      goto retry;
     }
   }
 }
