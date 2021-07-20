@@ -40,8 +40,8 @@ static void afl_exit(int status)
 {
   if (afl_forksrv_pid) {
     kill(afl_forksrv_pid, SIGKILL);
-    exit(status);
   }
+  exit(status);
 }
 
 void afl_setup(void)
