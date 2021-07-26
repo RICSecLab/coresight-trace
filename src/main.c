@@ -64,6 +64,7 @@ static bool forkserver_mode = false;
 static bool tracing_on = true;
 static bool polling_on = true;
 static int trace_cpu = -1;
+static int trace_id = -1;
 static bool trace_started = false;
 static bool is_first_trace = true;
 static float etf_ram_usage_threshold = 0.8;
@@ -435,6 +436,10 @@ static int init_trace(pid_t pid)
     }
   }
 
+  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+    goto exit;
+  }
+
   ret = 0;
 
 exit:
@@ -451,7 +456,6 @@ static void fini_trace(void)
   char *cwd;
   char trace_path[PATH_MAX];
   char decoder_args_path[PATH_MAX];
-  int trace_id;
   FILE *fp;
 
   cwd = NULL;
@@ -465,7 +469,7 @@ static void fini_trace(void)
     }
   }
 
-  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+  if (trace_id < 0) {
     return;
   }
 
@@ -633,7 +637,6 @@ static int decode_trace(void)
 {
   cs_device_t etb;
   libcsdec_result_t ret;
-  int trace_id;
 
   etb = devices.etb;
 
@@ -644,7 +647,7 @@ static int decode_trace(void)
     }
   }
 
-  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+  if (trace_id < 0) {
     return -1;
   }
 
