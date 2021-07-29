@@ -19,6 +19,7 @@
 #include <sys/mman.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/sysinfo.h>
 
 #include <linux/elf.h>
@@ -58,5 +59,7 @@ int get_mmap_params(pid_t pid, struct mmap_params *params);
 bool is_syscall_exit_group(pid_t pid);
 struct addr_range *append_mmap_exec_region(pid_t pid,
     struct mmap_params *params, struct addr_range *range, size_t range_count);
+int get_udmabuf_info(const char *udmabuf_name,
+    unsigned long *phys_addr, size_t *size);
 
 #endif /* PROC_TRACE_UTILS_H */
