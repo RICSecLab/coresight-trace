@@ -94,13 +94,15 @@ static libcsdec_t init_decoder(void)
     afl_area_ptr = mmap(NULL, MAP_SIZE, PROT_READ | PROT_WRITE,
         MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (!afl_area_ptr) {
-      return (libcsdec_t)NULL;
+      decoder = (libcsdec_t)NULL;
+      goto exit;
     }
     afl_map_size = MAP_SIZE;
   }
 
   decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size);
 
+exit:
   if (paths) {
     free(paths);
   }
