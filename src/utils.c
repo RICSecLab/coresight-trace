@@ -189,7 +189,7 @@ static int set_core_cpus(int cpu, cpu_set_t *cpu_set, size_t setsize)
   char *token;
   size_t n;
   ssize_t readn;
-  int core_cpu;
+  long int core_cpu;
 
   ret = -1;
   fp = NULL;
@@ -215,12 +215,12 @@ static int set_core_cpus(int cpu, cpu_set_t *cpu_set, size_t setsize)
     if (readn > 1 && token[readn - 1] != '\0') {
       token[readn - 1] = '\0';
     }
-    core_cpu = (int)strtol(token, NULL, 0);
+    core_cpu = strtol(token, NULL, 0);
     if (core_cpu == LONG_MIN || core_cpu == LONG_MAX) {
       perror("strtol");
       goto exit;
     }
-    CPU_SET_S(core_cpu, setsize, cpu_set);
+    CPU_SET_S((int)core_cpu, setsize, cpu_set);
   }
 
   ret = 0;

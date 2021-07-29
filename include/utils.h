@@ -23,6 +23,7 @@
 #include <sys/sysinfo.h>
 
 #include <linux/elf.h>
+#include <linux/limits.h>
 
 #include <asm/ptrace.h>
 #include <asm/unistd.h>

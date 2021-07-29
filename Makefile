@@ -37,6 +37,7 @@ OBJS:= \
   src/utils.o \
 
 CFLAGS:= \
+  -std=c11 \
   -Wall \
   -I$(INC) \
   -I$(CSAL_INC) \
