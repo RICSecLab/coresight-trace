@@ -15,12 +15,10 @@ struct addr_range {
   char path[PATH_MAX];
 };
 
-int get_trace_id(const char *hardware, int cpu);
 void dump_maps(FILE *stream, pid_t pid);
 void dump_mem_range(FILE *stream, struct addr_range *range, int count);
 int setup_mem_range(pid_t pid, struct addr_range *range, int count_max);
-int export_decoder_args(const char *hardware, int cpu,
-        const char *trace_path, const char *args_path,
-            struct addr_range *range, int count);
+int export_decoder_args(int trace_id, const char *trace_path,
+    const char *args_path, struct addr_range *range, int count);
 
 #endif /* PROC_TRACE_UTILS_H */

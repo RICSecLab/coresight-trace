@@ -35,6 +35,7 @@
 #include "proc-trace.h"
 #include "afl.h"
 #include "config.h"
+#include "known_boards.h"
 
 #include "afl/common.h"
 
@@ -81,7 +82,6 @@ static int count = 0;
 static pthread_cond_t trace_cond;
 static pthread_mutex_t trace_mutex;
 
-extern const struct board known_boards[];
 extern int registration_verbose;
 extern unsigned char *afl_area_ptr;
 extern unsigned int afl_map_size;
@@ -502,7 +502,7 @@ static void fini_trace(void)
         "%s/%s", cwd, DEFAULT_TRACE_ARGS_NAME);
   }
 
-  if (export_decoder_args(board_name, trace_cpu, trace_path, decoder_args_path,
+  if (export_decoder_args(trace_id, trace_path, decoder_args_path,
         range, range_count) < 0) {
     goto exit;
   }

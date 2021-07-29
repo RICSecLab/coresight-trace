@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#ifndef PROC_TRACE_KNOWN_BOARDS_H
+#define PROC_TRACE_KNOWN_BOARDS_H
+
 #include "csregistration.h"
+
+int get_trace_id(const char *hardware, int cpu);
 
 static int do_registration_thunderx2(struct cs_devices_t *devices)
 {
@@ -275,3 +280,23 @@ const struct board known_boards[] = {
   },
   {},
 };
+
+int get_trace_id(const char *hardware, int cpu)
+{
+  if (strcmp(hardware, "Marvell ThunderX2") == 0) {
+    return 0x10 + (cpu % 28) * 4 + cpu / 28; 
+  } else if (strcmp(hardware, "Jetson TX2") == 0) {
+    if (cpu == 0) {
+      return 0x10 + cpu;
+    } else if (3 <= cpu && cpu <= 5) {
+      return 0x10 + cpu - 2;
+    }   
+  } else if (strcmp(hardware, "Jetson Nano") == 0) {
+    return 0x10 + cpu;
+  }
+
+  // Unknown hardware name
+  return -1; 
+}
+
+#endif /* PROC_TRACE_KNOWN_BOARDS_H */

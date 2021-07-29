@@ -30,7 +30,6 @@ HDRS:= \
 OBJS:= \
   src/afl.o \
   src/config.o \
-  src/known_boards.o \
   src/main.o \
   src/utils.o \
 
