@@ -385,8 +385,6 @@ static int start_trace(pid_t pid)
     do_dump_config(board, &devices, 0);
   }
 
-  cs_checkpoint();
-
   trace_started = true;
   ret = 0;
 
@@ -415,8 +413,6 @@ static void stop_trace(void)
     cs_sink_disable(devices.trace_sinks[0]);
   }
   cs_sink_disable(devices.etb);
-
-  cs_checkpoint();
 
   if (registration_verbose > 1) {
     for (i = 0; i < board->n_cpu; ++i) {
