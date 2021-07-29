@@ -133,69 +133,6 @@ static void reset_trace_buf(void)
   }
 }
 
-#if 0
-static int decode_trace_from_dev(void)
-{
-  const char *u_dma_buf_root = "/dev";
-
-  cs_device_t etb;
-  int len;
-  char u_dma_buf_path[PATH_MAX];
-  int fd;
-  void *udmabuf;
-  libcsdec_result_t ret;
-  int trace_id;
-
-  etb = devices.etb;
-  len = cs_get_buffer_unread_bytes(etb);
-
-  memset(u_dma_buf_path, '\0', sizeof(u_dma_buf_path));
-  snprintf(u_dma_buf_path, sizeof(u_dma_buf_path), "%s/%s",
-      u_dma_buf_root, u_dma_buf_name);
-  if ((fd = open(u_dma_buf_path, O_RDONLY)) < 0) {
-    perror("open");
-    return -1;
-  }
-
-  udmabuf = mmap(NULL, (size_t)len, PROT_READ, MAP_SHARED, fd, 0);
-  if (!udmabuf) {
-    perror("mmap");
-    goto exit;
-  }
-
-  if (forkserver_mode || decoding_on) {
-    decoder = decoder ? decoder : init_decoder();
-    if (!decoder) {
-      goto exit;
-    }
-  }
-
-  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
-    goto exit;
-  }
-
-  if (forkserver_mode || decoding_on) {
-    ret = libcsdec_write_bitmap(decoder, udmabuf, (size_t)len, trace_id,
-      range_count, (struct libcsdec_memory_map *)range);
-    if (ret != LIBCEDEC_SUCCESS) {
-      needs_rerun = true;
-    }
-    cs_empty_trace_buffer(etb);
-  }
-
-exit:
-  if (udmabuf) {
-    munmap(udmabuf, len);
-  }
-
-  if (fd > 0) {
-    close(fd);
-  }
-
-  return 0;
-}
-#endif
-
 static int get_udmabuf_info(const char *udmabuf_name,
     unsigned long *phys_addr, size_t *size)
 {
