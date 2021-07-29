@@ -77,19 +77,10 @@ DIR?=trace/$(DATE)
 TRACEE?=tests/fib
 TRACEE_ARGS?=
 
-BF_HELLO:="+[-->-[>>+>-----<<]<--<---]>-.>>>+.>>..+++[.>]<<<<.+++.------.<<-.>>>>+."
-BF_INC:="[->+<]"
-BF_CODE?=$(BF_HELLO)
-
 all: $(TARGET) $(TESTS)
 
 decode: $(CSDEC) trace
 	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
-
-trace-bf: $(TARGET) $(TESTS)
-	mkdir -p $(DIR) && \
-	cd $(DIR) && \
-	sudo $(realpath $(TARGET)) $(realpath $(TRACEE)) $(BF_CODE)
 
 trace: $(TARGET) $(TESTS)
 	mkdir -p $(DIR) && \
@@ -120,4 +111,4 @@ dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
 	$(MAKE) -C $(CSDEC_BASE) clean
 
-.PHONY: all trace-bf trace debug decode libcsal clean dist-clean
+.PHONY: all trace debug decode libcsal clean dist-clean
