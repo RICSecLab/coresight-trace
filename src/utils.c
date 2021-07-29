@@ -322,3 +322,14 @@ exit:
 
   return ret;
 }
+
+void read_pid_fd_path(pid_t pid, int fd, char *buf, size_t size)
+{
+  char fd_path[PATH_MAX];
+
+  memset(fd_path, 0, sizeof(fd_path));
+  snprintf(fd_path, sizeof(fd_path), "/proc/%d/fd/%d", pid, fd);
+  if (readlink(fd_path, buf, size) < 0) {
+    perror("readlink");
+  }
+}

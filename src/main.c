@@ -495,17 +495,6 @@ static int decode_trace(void)
   return 0;
 }
 
-static void read_pid_fd_path(pid_t pid, int fd, char *buf, size_t size)
-{
-  char fd_path[PATH_MAX];
-
-  memset(fd_path, 0, sizeof(fd_path));
-  snprintf(fd_path, sizeof(fd_path), "/proc/%d/fd/%d", pid, fd);
-  if (readlink(fd_path, buf, size) < 0) {
-    perror("readlink");
-  }
-}
-
 static int get_mmap_params(pid_t pid, struct mmap_params *params)
 {
   struct user_pt_regs regs;

@@ -12,6 +12,8 @@
 #include <string.h>
 #include <limits.h>
 #include <sched.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include <sys/types.h>
 #include <sys/sysinfo.h>
@@ -29,5 +31,6 @@ int export_decoder_args(int trace_id, const char *trace_path,
     const char *args_path, struct addr_range *range, int count);
 int get_preferred_cpu(pid_t pid);
 int set_cpu_affinity(int cpu, pid_t pid);
+void read_pid_fd_path(pid_t pid, int fd, char *buf, size_t size);
 
 #endif /* PROC_TRACE_UTILS_H */
