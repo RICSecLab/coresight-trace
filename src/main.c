@@ -9,7 +9,6 @@
 #include <string.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <sched.h>
 #include <limits.h>
 #include <fcntl.h>
 
@@ -19,7 +18,6 @@
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <sys/stat.h>
-#include <sys/sysinfo.h>
 
 #include <linux/elf.h>
 #include <asm/ptrace.h>
@@ -94,173 +92,6 @@ struct mmap_params {
   int fd;
   off_t offset;
 };
-
-static cpu_set_t *alloc_cpu_set(cpu_set_t **cpu_set, size_t *setsize)
-{
-  int nprocs;
-
-  if (!cpu_set || !setsize) {
-    return NULL;
-  }
-
-  nprocs = get_nprocs();
-  *cpu_set = CPU_ALLOC(nprocs);
-  if (!(*cpu_set)) {
-    perror("CPU_ALLOC");
-    return NULL;
-  }
-
-  *setsize = CPU_ALLOC_SIZE(nprocs);
-  CPU_ZERO_S(*setsize, *cpu_set);
-
-  return *cpu_set;
-}
-
-static int set_core_cpus(int cpu, cpu_set_t *cpu_set, size_t setsize)
-{
-  int ret;
-  FILE *fp;
-  char core_cpus_list_path[PATH_MAX];
-  char *token;
-  size_t n;
-  ssize_t readn;
-  int core_cpu;
-
-  ret = -1;
-  fp = NULL;
-  token = NULL;
-
-  if (!cpu_set || !setsize) {
-    goto exit;
-  }
-
-  memset(core_cpus_list_path, 0, sizeof(core_cpus_list_path));
-  snprintf(core_cpus_list_path, sizeof(core_cpus_list_path),
-      "/sys/devices/system/cpu/cpu%d/topology/core_cpus_list", cpu);
-
-  fp = fopen(core_cpus_list_path, "r");
-  if (!fp) {
-    perror("fopen");
-    goto exit;
-  }
-
-  token = NULL;
-  n = 0;
-  while ((readn = getdelim(&token, &n, ',', fp)) != -1) {
-    if (readn > 1 && token[readn - 1] != '\0') {
-      token[readn - 1] = '\0';
-    }
-    core_cpu = (int)strtol(token, NULL, 0);
-    if (core_cpu == LONG_MIN || core_cpu == LONG_MAX) {
-      perror("strtol");
-      goto exit;
-    }
-    CPU_SET_S(core_cpu, setsize, cpu_set);
-  }
-
-  ret = 0;
-
-exit:
-  if (token) {
-    free(token);
-  }
-
-  if (fp) {
-    fclose(fp);
-  }
-
-  return ret;
-}
-
-/* Find CPU core not in the same group of CPU binded to the PID process. */
-static int get_preferred_cpu(pid_t pid)
-{
-  int ret;
-  int i;
-  cpu_set_t *cpu_set;
-  cpu_set_t *core_cpu_set;
-  size_t setsize;
-  size_t core_setsize;
-  int nprocs;
-  int preferred_cpu;
-
-  ret = -1;
-  cpu_set = NULL;
-  core_cpu_set = NULL;
-  preferred_cpu = -1;
-
-  if (!alloc_cpu_set(&cpu_set, &setsize)) {
-    goto exit;
-  }
-  if (sched_getaffinity(pid, setsize, cpu_set) < 0) {
-    perror("sched_getaffinity");
-    goto exit;
-  }
-
-  nprocs = get_nprocs();
-  if (!alloc_cpu_set(&core_cpu_set, &core_setsize)) {
-    goto exit;
-  }
-  for (i = 0; i < nprocs; i++) {
-    if (CPU_ISSET_S(i, setsize, cpu_set)) {
-      if (set_core_cpus(i, core_cpu_set, core_setsize) < 0) {
-        fprintf(stderr, "Failed to set related core CPU\n");
-        goto exit;
-      }
-    }
-  }
-
-  for (i = 0; i < nprocs; i++) {
-    if (!CPU_ISSET_S(i, core_setsize, core_cpu_set)) {
-      preferred_cpu = i;
-      break;
-    }
-  }
-
-  ret = preferred_cpu;
-
-exit:
-  if (core_cpu_set) {
-    CPU_FREE(core_cpu_set);
-  }
-
-  if (cpu_set) {
-    CPU_FREE(cpu_set);
-  }
-
-  return ret;
-}
-
-static int set_cpu_affinity(pid_t pid)
-{
-  int ret;
-  cpu_set_t *cpu_set;
-  size_t setsize;
-
-  ret = -1;
-
-  if (trace_cpu < 0) {
-    trace_cpu = DEFAULT_TRACE_CPU;
-  }
-
-  if (!alloc_cpu_set(&cpu_set, &setsize)) {
-    goto exit;
-  }
-  CPU_SET_S(trace_cpu, setsize,  cpu_set);
-  if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
-    perror("sched_setaffinity");
-    goto exit;
-  }
-
-  ret = 0;
-
-exit:
-  if (cpu_set) {
-    CPU_FREE(cpu_set);
-  }
-
-  return ret;
-}
 
 static libcsdec_t init_decoder(void)
 {
@@ -809,7 +640,7 @@ void afl_init_trace(pid_t afl_forksrv_pid, pid_t pid)
 
 void afl_start_trace(pid_t pid)
 {
-  set_cpu_affinity(pid);
+  set_cpu_affinity(trace_cpu, pid);
   init_trace_buf();
   if (tracing_on) {
     start_trace(pid);
@@ -845,7 +676,8 @@ void parent(pid_t pid, int *child_status)
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     pthread_mutex_lock(&trace_mutex);
-    set_cpu_affinity(pid);
+    trace_cpu = trace_cpu < 0 ? DEFAULT_TRACE_CPU : trace_cpu;
+    set_cpu_affinity(trace_cpu, pid);
     init_trace_buf();
     init_trace(pid);
     if (tracing_on) {
