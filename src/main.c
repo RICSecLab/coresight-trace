@@ -268,27 +268,12 @@ exit:
 
 static void stop_trace(void)
 {
-  int i;
+  if (disable_trace(board, &devices) < 0) {
+    fprintf(stderr, "disable_trace() failed\n");
+    return;
+  }
 
   trace_started = false;
-
-  if (etb_stop_on_flush > 0) {
-    cs_etb_flush_and_wait_stop(&devices);
-  }
-
-  for (i = 0; i < board->n_cpu; ++i) {
-    cs_trace_disable(devices.ptm[i]);
-  }
-  if (devices.trace_sinks[0]) {
-    cs_sink_disable(devices.trace_sinks[0]);
-  }
-  cs_sink_disable(devices.etb);
-
-  if (registration_verbose > 1) {
-    for (i = 0; i < board->n_cpu; ++i) {
-      show_etm_config(devices.ptm[i]);
-    }
-  }
 }
 
 static void fetch_trace(void)

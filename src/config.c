@@ -274,3 +274,38 @@ int enable_trace(const struct board *board, struct cs_devices_t *devices)
 
   return 0;
 }
+
+int disable_trace(const struct board *board, struct cs_devices_t *devices)
+{
+  int i, error_count;
+
+  if (!board || !devices) {
+    return -1;
+  }
+
+  if (etb_stop_on_flush > 0) {
+    cs_etb_flush_and_wait_stop(devices);
+  }
+
+  for (i = 0; i < board->n_cpu; ++i) {
+    cs_trace_disable(devices->ptm[i]);
+  }
+  if (devices->trace_sinks[0]) {
+    cs_sink_disable(devices->trace_sinks[0]);
+  }
+  cs_sink_disable(devices->etb);
+
+  if (registration_verbose > 1) {
+    for (i = 0; i < board->n_cpu; ++i) {
+      show_etm_config(devices->ptm[i]);
+    }
+  }
+
+  error_count = cs_error_count();
+  if (error_count > 0) {
+      fprintf(stderr, "%u errors reported when disabling trace\n", error_count);
+      return -1;
+  }
+
+  return 0;
+}

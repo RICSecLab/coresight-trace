@@ -23,5 +23,6 @@ void show_etm_config(cs_device_t etm);
 int configure_trace(const struct board *board, struct cs_devices_t *devices,
     struct addr_range *range, int range_count, pid_t pid);
 int enable_trace(const struct board *board, struct cs_devices_t *devices);
+int disable_trace(const struct board *board, struct cs_devices_t *devices);
 
 #endif /* PROC_TRACE_CONFIG_H */
