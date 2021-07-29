@@ -106,7 +106,7 @@ exit:
   return decoder;
 }
 
-static int init_trace_buf(void)
+static int alloc_trace_buf(void)
 {
   trace_buf = mmap(NULL, DEFAULT_TRACE_SIZE, PROT_READ | PROT_WRITE,
       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -120,7 +120,7 @@ static int init_trace_buf(void)
   return 0;
 }
 
-static void reset_trace_buf(void)
+static void free_trace_buf(void)
 {
   if (devices.etb) {
     cs_empty_trace_buffer(devices.etb);
@@ -222,7 +222,7 @@ static void fini_trace(void)
     dump_mem_range(stderr, range, range_count);
   }
 
-  reset_trace_buf();
+  free_trace_buf();
   cs_shutdown();
 }
 
@@ -395,7 +395,7 @@ void afl_init_trace(pid_t afl_forksrv_pid, pid_t pid)
 void afl_start_trace(pid_t pid)
 {
   set_cpu_affinity(trace_cpu, pid);
-  init_trace_buf();
+  alloc_trace_buf();
   if (tracing_on) {
     start_trace(pid);
   }
@@ -406,7 +406,7 @@ void afl_stop_trace(void)
   stop_trace();
   fetch_trace();
   decode_trace();
-  reset_trace_buf();
+  free_trace_buf();
   count += 1;
 }
 
@@ -430,7 +430,7 @@ void parent(pid_t pid, int *child_status)
     pthread_mutex_lock(&trace_mutex);
     trace_cpu = trace_cpu < 0 ? DEFAULT_TRACE_CPU : trace_cpu;
     set_cpu_affinity(trace_cpu, pid);
-    init_trace_buf();
+    alloc_trace_buf();
     init_trace(pid);
     if (tracing_on) {
       start_trace(pid);
