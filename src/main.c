@@ -122,6 +122,17 @@ static int init_trace_buf(void)
   return 0;
 }
 
+static void reset_trace_buf(void)
+{
+  if (devices.etb) {
+    cs_empty_trace_buffer(devices.etb);
+  }
+
+  if (trace_buf) {
+    munmap(trace_buf, trace_buf_size);
+  }
+}
+
 #if 0
 static int decode_trace_from_dev(void)
 {
@@ -283,57 +294,27 @@ exit:
   return ret;
 }
 
-static void fini_trace(void)
+static int export_trace(void)
 {
-  libcsdec_result_t ret;
+  int ret;
   char *cwd;
   char trace_path[PATH_MAX];
   char decoder_args_path[PATH_MAX];
   FILE *fp;
 
-  cwd = NULL;
-
-  cs_shutdown();
-
-  if (forkserver_mode || decoding_on) {
-    decoder = decoder ? decoder : init_decoder();
-    if (!decoder) {
-      return;
-    }
-  }
-
-  if (trace_id < 0) {
-    return;
-  }
-
-  if (forkserver_mode || decoding_on) {
-    ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
-      range_count, (struct libcsdec_memory_map *)range);
-    if (ret != LIBCEDEC_SUCCESS) {
-      needs_rerun = true;
-    }
-    if (!export_config && !needs_rerun) {
-      return;
-    }
-  }
+  ret = -1;
 
   cwd = getcwd(NULL, 0);
   if (!cwd) {
     perror("getcwd");
-    return;
+    goto exit;
   }
 
   memset(trace_path, 0, sizeof(trace_path));
   memset(decoder_args_path, 0, sizeof(decoder_args_path));
-  if (forkserver_mode) {
-    snprintf(trace_path, sizeof(trace_path), "%s/cstrace%d.bin", cwd, count);
-    snprintf(decoder_args_path, sizeof(decoder_args_path),
-        "%s/decoderargs%d.txt", cwd, count);
-  } else {
-    snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, DEFAULT_TRACE_NAME);
-    snprintf(decoder_args_path, sizeof(decoder_args_path),
-        "%s/%s", cwd, DEFAULT_TRACE_ARGS_NAME);
-  }
+  snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, DEFAULT_TRACE_NAME);
+  snprintf(decoder_args_path, sizeof(decoder_args_path),
+      "%s/%s", cwd, DEFAULT_TRACE_ARGS_NAME);
 
   if (export_decoder_args(trace_id, trace_path, decoder_args_path,
         range, range_count) < 0) {
@@ -341,23 +322,34 @@ static void fini_trace(void)
   }
 
   fp = fopen(trace_path, "wb");
-  if (fp) {
-    fwrite(trace_buf, (size_t)((char *)trace_buf_ptr - (char *)trace_buf), 1, fp);
-    fclose(fp);
+  if (!fp) {
+    perror("fopen");
+    goto exit;
   }
+
+  fwrite(trace_buf, (size_t)((char *)trace_buf_ptr - (char *)trace_buf), 1, fp);
+  fclose(fp);
+
+  ret = 0;
 
 exit:
-  if (registration_verbose > 0) {
-    dump_mem_range(stderr, range, range_count);
-  }
-
   if (cwd) {
     free(cwd);
   }
 
-  if (trace_buf) {
-    munmap(trace_buf, trace_buf_size);
+  return ret;
+}
+
+static void fini_trace(void)
+{
+  export_trace();
+
+  if (registration_verbose > 0) {
+    dump_mem_range(stderr, range, range_count);
   }
+
+  reset_trace_buf();
+  cs_shutdown();
 }
 
 static int start_trace(pid_t pid)
@@ -464,30 +456,24 @@ static void fetch_trace(void)
 
 static int decode_trace(void)
 {
-  cs_device_t etb;
   libcsdec_result_t ret;
 
-  etb = devices.etb;
+  if (trace_id < 0) {
+    return -1;
+  }
 
-  if (forkserver_mode || decoding_on) {
+  if (!decoder) {
     decoder = decoder ? decoder : init_decoder();
     if (!decoder) {
       return -1;
     }
   }
 
-  if (trace_id < 0) {
+  ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
+    range_count, (struct libcsdec_memory_map *)range);
+  if (ret != LIBCEDEC_SUCCESS) {
+    needs_rerun = true;
     return -1;
-  }
-
-  if (forkserver_mode || decoding_on) {
-    ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
-      range_count, (struct libcsdec_memory_map *)range);
-    cs_empty_trace_buffer(etb);
-    if (ret != LIBCEDEC_SUCCESS) {
-      needs_rerun = true;
-      return -1;
-    }
   }
 
   return 0;
@@ -561,9 +547,7 @@ void afl_stop_trace(void)
   stop_trace();
   fetch_trace();
   decode_trace();
-  if (trace_buf) {
-    munmap(trace_buf, trace_buf_size);
-  }
+  reset_trace_buf();
   count += 1;
 }
 
@@ -610,6 +594,9 @@ void parent(pid_t pid, int *child_status)
         pthread_mutex_lock(&trace_mutex);
         stop_trace();
         fetch_trace();
+        if (decoding_on) {
+          decode_trace();
+        }
         fini_trace();
         pthread_mutex_unlock(&trace_mutex);
       }
