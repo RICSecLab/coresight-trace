@@ -24,7 +24,10 @@ LIBCSDEC:=$(CSDEC_BASE)/libcsdec.a
 INC:=include
 
 HDRS:= \
+  $(INC)/afl.h \
   $(INC)/config.h \
+  $(INC)/known_boards.h \
+  $(INC)/proc-trace.h \
   $(INC)/utils.h \
 
 OBJS:= \
