@@ -84,20 +84,16 @@ static libcsdec_t init_decoder(void)
 
   paths = malloc(sizeof(char *) * range_count);
   if (!paths) {
-    return (libcsdec_t)NULL;
+    decoder = (libcsdec_t)NULL;
+    goto exit;
   }
   for (i = 0; i < range_count; i++) {
     paths[i] = range[i].path;
   }
 
   if (!afl_area_ptr || afl_map_size == 0) {
-    afl_area_ptr = mmap(NULL, MAP_SIZE, PROT_READ | PROT_WRITE,
-        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    if (!afl_area_ptr) {
-      decoder = (libcsdec_t)NULL;
-      goto exit;
-    }
-    afl_map_size = MAP_SIZE;
+    decoder = (libcsdec_t)NULL;
+    goto exit;
   }
 
   decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size);
