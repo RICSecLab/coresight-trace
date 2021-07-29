@@ -3,19 +3,11 @@
 #ifndef PROC_TRACE_CONFIG_H
 #define PROC_TRACE_CONFIG_H
 
-#include <stdio.h>
-#include <stdbool.h>
-#include <assert.h>
-#include <limits.h>
+#include <sys/types.h>
 
-#include "csaccess.h"
 #include "csregistration.h"
-#include "csregisters.h"
-#include "cs_util_create_snapshot.h"
 
 #include "utils.h"
-
-#define SHOW_ETM_CONFIG 0
 
 void cs_etb_flush_and_wait_stop(struct cs_devices_t *devices);
 int init_etm(cs_device_t dev);

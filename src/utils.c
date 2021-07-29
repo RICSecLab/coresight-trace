@@ -1,6 +1,31 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "utils.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <limits.h>
+#include <sched.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+#include <sys/mman.h>
+#include <sys/ptrace.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/sysinfo.h>
+
+#include <linux/elf.h>
+#include <linux/limits.h>
+
+#include <asm/ptrace.h>
+#include <asm/unistd.h>
 
 void dump_mem_range(FILE *stream, struct addr_range *range, int count)
 {

@@ -2,6 +2,20 @@
 
 #include "config.h"
 
+#include <stdio.h>
+#include <stdbool.h>
+#include <assert.h>
+#include <limits.h>
+
+#include "csaccess.h"
+#include "csregistration.h"
+#include "csregisters.h"
+#include "cs_util_create_snapshot.h"
+
+#include "utils.h"
+
+#define SHOW_ETM_CONFIG 0
+
 const bool return_stack = false;
 
 extern unsigned long etr_ram_addr;
