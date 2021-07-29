@@ -44,7 +44,6 @@
 
 unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
-int etb_stop_on_flush = 1;
 bool needs_rerun = false;
 
 static char *board_name = DEFAULT_BOARD_NAME;
@@ -511,7 +510,6 @@ static void usage(char *argv0)
   fprintf(stderr, "  --polling={0,1}\t\tenable ETF polling (default: %d)\n", polling_on);
   fprintf(stderr, "  --decoding={0,1}\t\tenable trace decoding (default: %d)\n", decoding_on);
   fprintf(stderr, "  --export-config={0,1}\t\tenable exporting config (default: %d)\n", export_config);
-  fprintf(stderr, "  --etf-stop-on-flush={0,1}\tenable ETF polling (default: %d)\n", etb_stop_on_flush);
   fprintf(stderr, "  --etf-threshold=FLOAT\t\tETF full threshold (default: %.1f)\n", etf_ram_usage_threshold);
   fprintf(stderr, "  --verbose=INT\t\t\tverbose output level (default: %d)\n", registration_verbose);
   fprintf(stderr, "  --help\t\t\tshow this help\n");
@@ -549,9 +547,6 @@ int main(int argc, char *argv[])
     } else if (sscanf(argv[i], "--polling=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
       polling_on = n ? true : false;
-    } else if (sscanf(argv[i], "--etf-stop-on-flush=%d%c", &n, &junk) == 1
-        && (n == 0 || n == 1)) {
-      etb_stop_on_flush = n;
     } else if (sscanf(argv[i], "--etf-threshold=%f%c", &f, &junk) == 1
         && (0 < f && f < 1)) {
       etf_ram_usage_threshold = f;

@@ -6,7 +6,6 @@ const bool return_stack = false;
 
 extern unsigned long etr_ram_addr;
 extern size_t etr_ram_size;
-extern int etb_stop_on_flush;
 extern int registration_verbose;
 
 void cs_etb_flush_and_wait_stop(struct cs_devices_t *devices)
@@ -210,12 +209,10 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
     }
 
     unsigned int ffcr_val;
-    if (etb_stop_on_flush) {
-        ffcr_val = cs_device_read(devices->etb, CS_ETB_FLFMT_CTRL);
-        ffcr_val |= CS_ETB_FLFMT_CTRL_StopFl;
-        if (cs_device_write(devices->etb, CS_ETB_FLFMT_CTRL, ffcr_val) != 0) {
-            fprintf(stderr, "Failed to set stop on flush\n");
-        }
+    ffcr_val = cs_device_read(devices->etb, CS_ETB_FLFMT_CTRL);
+    ffcr_val |= CS_ETB_FLFMT_CTRL_StopFl;
+    if (cs_device_write(devices->etb, CS_ETB_FLFMT_CTRL, ffcr_val) != 0) {
+        fprintf(stderr, "Failed to set stop on flush\n");
     }
 
     error_count = cs_error_count();
@@ -283,9 +280,7 @@ int disable_trace(const struct board *board, struct cs_devices_t *devices)
     return -1;
   }
 
-  if (etb_stop_on_flush > 0) {
-    cs_etb_flush_and_wait_stop(devices);
-  }
+  cs_etb_flush_and_wait_stop(devices);
 
   for (i = 0; i < board->n_cpu; ++i) {
     cs_trace_disable(devices->ptm[i]);
