@@ -333,3 +333,84 @@ void read_pid_fd_path(pid_t pid, int fd, char *buf, size_t size)
     perror("readlink");
   }
 }
+
+static long get_pid_syscall_regs(pid_t pid, struct user_pt_regs *regs)
+{
+  struct iovec iov;
+  long syscall;
+
+  if (!regs) {
+    return -1;
+  }
+
+  iov.iov_base = regs;
+  iov.iov_len = sizeof(regs);
+  if (ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov) < 0) {
+    return -1;
+  }
+
+  syscall = regs->regs[8];
+
+  return syscall;
+}
+
+int get_mmap_params(pid_t pid, struct mmap_params *params)
+{
+  struct user_pt_regs regs;
+  long syscall;
+
+  if (!params) {
+    return -1;
+  }
+
+  if ((syscall = get_pid_syscall_regs(pid, &regs)) != __NR_mmap) {
+    return -1;
+  }
+
+  params->addr = (void *)regs.regs[0];
+  params->length = (size_t)regs.regs[1];
+  params->prot = (int)regs.regs[2];
+  params->flags = (int)regs.regs[3];
+  params->fd = (int)regs.regs[4];
+  params->offset = (off_t)regs.regs[5];
+
+  return 0;
+}
+
+bool is_syscall_exit_group(pid_t pid)
+{
+  struct user_pt_regs regs;
+
+  if (get_pid_syscall_regs(pid, &regs) == __NR_exit_group) {
+    return true;
+  }
+
+  return false;
+}
+
+struct addr_range *append_mmap_exec_region(pid_t pid,
+    struct mmap_params *params, struct addr_range *range, size_t range_count)
+{
+  struct addr_range *r;
+
+  if (!params || !range) {
+    return NULL;
+  }
+
+  if (!(params->prot & PROT_EXEC) || params->fd < 3) {
+    return NULL;
+  }
+
+  if (range_count >= RANGE_MAX) {
+    return NULL;
+  }
+
+  r = &range[range_count];
+
+  r->start = (unsigned long)params->addr;
+  r->end = ALIGN_UP(r->start + params->length, PAGE_SIZE);
+  read_pid_fd_path(pid, params->fd, r->path, PATH_MAX);
+  range_count++;
+
+  return r;
+}

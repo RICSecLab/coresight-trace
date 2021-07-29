@@ -19,10 +19,6 @@
 #include <sys/uio.h>
 #include <sys/stat.h>
 
-#include <linux/elf.h>
-#include <asm/ptrace.h>
-#include <asm/unistd.h>
-
 #include "csaccess.h"
 #include "csregistration.h"
 #include "csregisters.h"
@@ -31,16 +27,12 @@
 #include "libcsdec.h"
 
 #include "proc-trace.h"
-#include "afl.h"
-#include "config.h"
 #include "known_boards.h"
+#include "config.h"
+#include "utils.h"
+#include "afl.h"
 
 #include "afl/common.h"
-
-#define RANGE_MAX (32)
-
-#define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
-#define PAGE_SIZE 0x1000
 
 #define DEFAULT_BOARD_NAME "Marvell ThunderX2"
 #define DEFAULT_TRACE_CPU 0
@@ -83,15 +75,6 @@ static pthread_mutex_t trace_mutex;
 extern int registration_verbose;
 extern unsigned char *afl_area_ptr;
 extern unsigned int afl_map_size;
-
-struct mmap_params {
-  void *addr;
-  size_t length;
-  int prot;
-  int flags;
-  int fd;
-  off_t offset;
-};
 
 static libcsdec_t init_decoder(void)
 {
@@ -495,84 +478,6 @@ static int decode_trace(void)
   return 0;
 }
 
-static int get_mmap_params(pid_t pid, struct mmap_params *params)
-{
-  struct user_pt_regs regs;
-  struct iovec iov;
-  long syscall;
-
-  if (!params) {
-    return -1;
-  }
-
-  iov.iov_base = &regs;
-  iov.iov_len = sizeof(regs);
-  if (ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov) < 0) {
-    return -1;
-  }
-
-  syscall = regs.regs[8];
-  if (syscall != __NR_mmap) {
-    return -1;
-  }
-
-  params->addr = (void *)regs.regs[0];
-  params->length = (size_t)regs.regs[1];
-  params->prot = (int)regs.regs[2];
-  params->flags = (int)regs.regs[3];
-  params->fd = (int)regs.regs[4];
-  params->offset = (off_t)regs.regs[5];
-
-  return 0;
-}
-
-static int get_exit_group_params(pid_t pid)
-{
-  struct user_pt_regs regs;
-  struct iovec iov;
-  long syscall;
-
-  iov.iov_base = &regs;
-  iov.iov_len = sizeof(regs);
-  if (ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov) < 0) {
-    return -1;
-  }
-
-  syscall = regs.regs[8];
-  if (syscall != __NR_exit_group) {
-    return -1;
-  }
-
-  return 0;
-}
-
-static struct addr_range *append_mmap_exec_region(pid_t pid,
-    struct mmap_params *params)
-{
-  struct addr_range *r;
-
-  if (!params) {
-    return NULL;
-  }
-
-  if (!(params->prot & PROT_EXEC) || params->fd < 3) {
-    return NULL;
-  }
-
-  if (range_count >= RANGE_MAX) {
-    return NULL;
-  }
-
-  r = &range[range_count];
-
-  r->start = (unsigned long)params->addr;
-  r->end = ALIGN_UP(r->start + params->length, PAGE_SIZE);
-  read_pid_fd_path(pid, params->fd, r->path, PATH_MAX);
-  range_count++;
-
-  return r;
-}
-
 static void *etb_polling(void *arg)
 {
   pid_t pid = *(pid_t *)arg;
@@ -698,7 +603,7 @@ void parent(pid_t pid, int *child_status)
       // TODO: It should support mprotect
       if (get_mmap_params(pid, &mmap_params) < 0) {
         // Not mmap syscall. Do nothing
-        if (get_exit_group_params(pid) >= 0) {
+        if (is_syscall_exit_group(pid)) {
           // exit_group syscall.
           if (registration_verbose > 0) {
             dump_maps(stderr, pid);
@@ -706,7 +611,7 @@ void parent(pid_t pid, int *child_status)
         }
       } else {
         if (is_entered_mmap) {
-          append_mmap_exec_region(pid, &mmap_params);
+          append_mmap_exec_region(pid, &mmap_params, range, range_count);
         }
         is_entered_mmap = !is_entered_mmap;
       }
