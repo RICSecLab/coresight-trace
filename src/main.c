@@ -50,7 +50,7 @@ bool needs_rerun = false;
 static char *board_name = DEFAULT_BOARD_NAME;
 static const struct board *board;
 static struct cs_devices_t devices;
-static char *u_dma_buf_name = DEFAULT_UDMABUF_NAME;
+static char *udmabuf_name = DEFAULT_UDMABUF_NAME;
 static bool forkserver_mode = false;
 static bool tracing_on = true;
 static bool polling_on = true;
@@ -185,12 +185,13 @@ exit:
 }
 #endif
 
-static int init_trace(pid_t pid)
+static int get_udmabuf_info(const char *udmabuf_name,
+    unsigned long *phys_addr, size_t *size)
 {
-  const char *u_dma_buf_root = "/sys/class/u-dma-buf";
+  const char *udmabuf_root = "/sys/class/u-dma-buf";
 
   int ret;
-  char u_dma_buf_path[PATH_MAX];
+  char udmabuf_path[PATH_MAX];
   char tmp_path[PATH_MAX];
   char attr[1024];
   int fd;
@@ -198,19 +199,19 @@ static int init_trace(pid_t pid)
 
   ret = -1;
 
-  memset(u_dma_buf_path, '\0', sizeof(u_dma_buf_path));
-  snprintf(u_dma_buf_path, sizeof(u_dma_buf_path), "%s/%s",
-      u_dma_buf_root, u_dma_buf_name);
-  ret = stat(u_dma_buf_path, &sb);
-  if (stat(u_dma_buf_path, &sb) != 0 || (!S_ISDIR(sb.st_mode))) {
+  memset(udmabuf_path, '\0', sizeof(udmabuf_path));
+  snprintf(udmabuf_path, sizeof(udmabuf_path), "%s/%s",
+      udmabuf_root, udmabuf_name);
+  ret = stat(udmabuf_path, &sb);
+  if (stat(udmabuf_path, &sb) != 0 || (!S_ISDIR(sb.st_mode))) {
     fprintf(stderr, "u-dma-buf device '%s' not found\n",
-        u_dma_buf_name);
+        udmabuf_name);
     return ret;
   }
 
   memset(tmp_path, '\0', sizeof(tmp_path));
   snprintf(tmp_path, sizeof(tmp_path), "%s/%s/phys_addr",
-      u_dma_buf_root, u_dma_buf_name);
+      udmabuf_root, udmabuf_name);
   if ((fd = open(tmp_path, O_RDONLY)) < 0) {
     perror("open");
     return -1;
@@ -219,13 +220,15 @@ static int init_trace(pid_t pid)
   memset(attr, 0, sizeof(attr));
   if (read(fd, attr, sizeof(attr)) < 0) {
     perror("read");
+    close(fd);
+    return -1;
   }
-  sscanf(attr, "%lx", &etr_ram_addr);
+  sscanf(attr, "%lx", phys_addr);
   close(fd);
 
   memset(tmp_path, '\0', sizeof(tmp_path));
   snprintf(tmp_path, sizeof(tmp_path), "%s/%s/size",
-      u_dma_buf_root, u_dma_buf_name);
+      udmabuf_root, udmabuf_name);
   if ((fd = open(tmp_path, O_RDONLY)) < 0) {
     perror("open");
     return -1;
@@ -234,9 +237,25 @@ static int init_trace(pid_t pid)
   memset(attr, 0, sizeof(attr));
   if (read(fd, attr, sizeof(attr)) < 0) {
     perror("read");
+    close(fd);
+    return -1;
   }
-  sscanf(attr, "%ld", &etr_ram_size);
+  sscanf(attr, "%ld", size);
   close(fd);
+
+  return 0;
+}
+
+static int init_trace(pid_t pid)
+{
+  int ret;
+
+  ret = -1;
+
+  if (get_udmabuf_info(udmabuf_name, &etr_ram_addr, &etr_ram_size) < 0) {
+    fprintf(stderr, "Failed to get u-dma-buf info\n");
+    goto exit;
+  }
 
   if ((range_count = setup_mem_range(pid, range, RANGE_MAX)) < 0) {
     fprintf(stderr, "setup_mem_range() failed\n");
