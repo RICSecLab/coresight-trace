@@ -201,10 +201,10 @@ retry:
 
     /* Parent. */
     if (first_run) {
-      afl_init_trace(afl_forksrv_pid, child_pid);
+      init_trace(afl_forksrv_pid, child_pid);
       first_run = 0;
     }
-    afl_start_trace(child_pid);
+    start_trace(child_pid);
 
     if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
       afl_exit(11);
@@ -217,7 +217,7 @@ retry:
       afl_exit(12);
     }
 
-    afl_stop_trace();
+    stop_trace(true, true);
 
     /* In persistent mode, the child stops itself with SIGSTOP to indicate
      * a successfull run. In this case, we want to wake it up without forking

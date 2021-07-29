@@ -66,7 +66,6 @@ static void *trace_buf = NULL;
 static size_t trace_buf_size = 0;
 static void *trace_buf_ptr = NULL;
 static bool decoding_on = false;
-static int count = 0;
 
 static pthread_cond_t trace_cond;
 static pthread_mutex_t trace_mutex;
@@ -130,43 +129,6 @@ static void free_trace_buf(void)
   }
 }
 
-static int init_trace(pid_t pid)
-{
-  int ret;
-
-  ret = -1;
-
-  if (get_udmabuf_info(udmabuf_name, &etr_ram_addr, &etr_ram_size) < 0) {
-    fprintf(stderr, "Failed to get u-dma-buf info\n");
-    goto exit;
-  }
-
-  if ((range_count = setup_mem_range(pid, range, RANGE_MAX)) < 0) {
-    fprintf(stderr, "setup_mem_range() failed\n");
-    goto exit;
-  }
-
-  if (tracing_on) {
-    if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
-      fprintf(stderr, "setup_named_board() failed\n");
-      goto exit;
-    }
-  }
-
-  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
-    goto exit;
-  }
-
-  ret = 0;
-
-exit:
-  if (tracing_on && ret < 0) {
-    cs_shutdown();
-  }
-
-  return ret;
-}
-
 static int export_trace(void)
 {
   int ret;
@@ -213,19 +175,44 @@ exit:
   return ret;
 }
 
-static void fini_trace(void)
+static int setup_trace_config(pid_t pid)
 {
-  export_trace();
+  int ret;
 
-  if (registration_verbose > 0) {
-    dump_mem_range(stderr, range, range_count);
+  ret = -1;
+
+  if (get_udmabuf_info(udmabuf_name, &etr_ram_addr, &etr_ram_size) < 0) {
+    fprintf(stderr, "Failed to get u-dma-buf info\n");
+    goto exit;
   }
 
-  free_trace_buf();
-  cs_shutdown();
+  if ((range_count = setup_mem_range(pid, range, RANGE_MAX)) < 0) {
+    fprintf(stderr, "setup_mem_range() failed\n");
+    goto exit;
+  }
+
+  if (tracing_on) {
+    if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
+      fprintf(stderr, "setup_named_board() failed\n");
+      goto exit;
+    }
+  }
+
+  if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+    goto exit;
+  }
+
+  ret = 0;
+
+exit:
+  if (tracing_on && ret < 0) {
+    cs_shutdown();
+  }
+
+  return ret;
 }
 
-static int start_trace(pid_t pid)
+static int enable_cs_trace(pid_t pid)
 {
   int ret;
 
@@ -261,7 +248,7 @@ exit:
   return ret;
 }
 
-static void stop_trace(void)
+static void disable_cs_trace(void)
 {
   if (disable_trace(board, &devices) < 0) {
     fprintf(stderr, "disable_trace() failed\n");
@@ -337,6 +324,50 @@ static int decode_trace(void)
   return 0;
 }
 
+static void fini_trace(void)
+{
+  export_trace();
+
+  if (registration_verbose > 0) {
+    dump_mem_range(stderr, range, range_count);
+  }
+
+  free_trace_buf();
+  cs_shutdown();
+}
+
+void init_trace(pid_t parent_pid, pid_t pid)
+{
+  int preferred_cpu;
+
+  if (trace_cpu < 0) {
+    preferred_cpu = get_preferred_cpu(parent_pid);
+    trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
+  }
+  setup_trace_config(pid);
+}
+
+void start_trace(pid_t pid)
+{
+  set_cpu_affinity(trace_cpu, pid);
+  alloc_trace_buf();
+  if (tracing_on) {
+    enable_cs_trace(pid);
+  }
+}
+
+void stop_trace(bool needs_decode, bool needs_free_trace_buf)
+{
+  disable_cs_trace();
+  fetch_trace();
+  if (needs_decode) {
+    decode_trace();
+  }
+  if (needs_free_trace_buf) {
+    free_trace_buf();
+  }
+}
+
 static void *etb_polling(void *arg)
 {
   pid_t pid = *(pid_t *)arg;
@@ -380,35 +411,6 @@ void child(char *argv[])
   execvp(argv[0], argv);
 }
 
-void afl_init_trace(pid_t afl_forksrv_pid, pid_t pid)
-{
-  int preferred_cpu;
-
-  if (trace_cpu < 0) {
-    preferred_cpu = get_preferred_cpu(afl_forksrv_pid);
-    trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
-  }
-  init_trace(pid);
-}
-
-void afl_start_trace(pid_t pid)
-{
-  set_cpu_affinity(trace_cpu, pid);
-  alloc_trace_buf();
-  if (tracing_on) {
-    start_trace(pid);
-  }
-}
-
-void afl_stop_trace(void)
-{
-  stop_trace();
-  fetch_trace();
-  decode_trace();
-  free_trace_buf();
-  count += 1;
-}
-
 void parent(pid_t pid, int *child_status)
 {
   int wstatus;
@@ -427,13 +429,8 @@ void parent(pid_t pid, int *child_status)
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     pthread_mutex_lock(&trace_mutex);
-    trace_cpu = trace_cpu < 0 ? DEFAULT_TRACE_CPU : trace_cpu;
-    set_cpu_affinity(trace_cpu, pid);
-    alloc_trace_buf();
-    init_trace(pid);
-    if (tracing_on) {
-      start_trace(pid);
-    }
+    init_trace(getpid(), pid);
+    start_trace(pid);
     pthread_mutex_unlock(&trace_mutex);
   }
 
@@ -450,11 +447,7 @@ void parent(pid_t pid, int *child_status)
     if (WIFEXITED(wstatus)) {
       if (tracing_on && trace_started == true) {
         pthread_mutex_lock(&trace_mutex);
-        stop_trace();
-        fetch_trace();
-        if (decoding_on) {
-          decode_trace();
-        }
+        stop_trace(decoding_on, false);
         fini_trace();
         pthread_mutex_unlock(&trace_mutex);
       }
@@ -482,8 +475,7 @@ void parent(pid_t pid, int *child_status)
           fprintf(stderr, "WARNING: ETB full bit is set: %d bytes\n", bytes);
         }
         pthread_mutex_lock(&trace_mutex);
-        stop_trace();
-        fetch_trace();
+        stop_trace(false, false);
         start_trace(pid);
         pthread_cond_signal(&trace_cond);
         pthread_mutex_unlock(&trace_mutex);
