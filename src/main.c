@@ -45,6 +45,7 @@
 unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
 bool needs_rerun = false;
+bool etr_mode = false;
 
 static char *board_name = DEFAULT_BOARD_NAME;
 static const struct board *board;
@@ -181,7 +182,8 @@ static int setup_trace_config(pid_t pid)
 
   ret = -1;
 
-  if (get_udmabuf_info(udmabuf_name, &etr_ram_addr, &etr_ram_size) < 0) {
+  if (etr_mode
+      && get_udmabuf_info(udmabuf_name, &etr_ram_addr, &etr_ram_size) < 0) {
     fprintf(stderr, "Failed to get u-dma-buf info\n");
     goto exit;
   }
@@ -539,6 +541,9 @@ int main(int argc, char *argv[])
     } else if (sscanf(argv[i], "--polling=%d%c", &n, &junk) == 1
         && (n == 0 || n == 1)) {
       polling_on = n ? true : false;
+    } else if (sscanf(argv[i], "--etr=%d%c", &n, &junk) == 1
+        && (n == 0 || n == 1)) {
+      etr_mode = n ? true : false;
     } else if (sscanf(argv[i], "--etf-threshold=%f%c", &f, &junk) == 1
         && (0 < f && f < 1)) {
       etf_ram_usage_threshold = f;

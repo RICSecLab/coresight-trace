@@ -5,6 +5,10 @@
 
 #include "csregistration.h"
 
+#include <stdbool.h>
+
+extern bool etr_mode;
+
 int get_trace_id(const char *hardware, int cpu);
 
 static int do_registration_thunderx2(struct cs_devices_t *devices)
@@ -47,8 +51,8 @@ static int do_registration_thunderx2(struct cs_devices_t *devices)
     cs_atb_register(rep, 0, etr, 0);
     cs_atb_register(rep, 1, tpiu, 0);
 
-    devices->etb = etr;
-    devices->trace_sinks[0] = etf;
+    devices->etb = etr_mode ? etr : etf;
+    devices->trace_sinks[0] = etr_mode ? etf : NULL;
 
     for (int i = 0; i < num_cs_cpu; i++ ) {
         devices->cpu_id[i] = cpu_id[i];
@@ -110,8 +114,8 @@ static int do_registration_jetson_nano(struct cs_devices_t *devices)
   cs_atb_register(rep, 1, tpiu, 0);
 
   devices->itm = stm;
-  devices->etb = etr;
-  devices->trace_sinks[0] = etf;
+  devices->etb = etr_mode ? etr : etf;
+  devices->trace_sinks[0] = etr_mode ? etf : NULL;
 
   cs_stm_config_master(stm, 0, 0x71000000);
   cs_stm_select_master(stm, 0);
@@ -219,8 +223,8 @@ static int do_registration_jetsontx2(struct cs_devices_t *devices)
   cs_atb_register(rep, 0, tpiu, 0);
 
   devices->itm = stm;
-  devices->etb = etr;
-  devices->trace_sinks[0] = etf;
+  devices->etb = etr_mode ? etr : etf;
+  devices->trace_sinks[0] = etr_mode ? etf : NULL;
 
   /* stm registration */
   cs_stm_config_master(stm, 0, 0x0a000000);
