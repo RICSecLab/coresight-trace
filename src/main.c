@@ -67,6 +67,7 @@ static void *trace_buf = NULL;
 static size_t trace_buf_size = 0;
 static void *trace_buf_ptr = NULL;
 static bool decoding_on = false;
+static bool ptrix_decoding = true;
 
 static pthread_cond_t trace_cond;
 static pthread_mutex_t trace_mutex;
@@ -309,15 +310,24 @@ static int decode_trace(void)
     return -1;
   }
 
-  if (!decoder) {
-    decoder = decoder ? decoder : init_decoder();
-    if (!decoder) {
-      return -1;
-    }
+  if (!afl_area_ptr || afl_map_size == 0) {
+    return -1;
   }
 
-  ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
-    range_count, (struct libcsdec_memory_map *)range);
+  if (ptrix_decoding) {
+    ret = libcsdec_run_ptrix(trace_buf, trace_buf_size, trace_id,
+        range_count, (struct libcsdec_memory_map *)range,
+        afl_area_ptr, afl_map_size);
+  } else {
+    if (!decoder) {
+      decoder = decoder ? decoder : init_decoder();
+      if (!decoder) {
+        return -1;
+      }
+    }
+    ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
+      range_count, (struct libcsdec_memory_map *)range);
+  }
   if (ret != LIBCEDEC_SUCCESS) {
     needs_rerun = true;
     return -1;
