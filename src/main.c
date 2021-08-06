@@ -45,7 +45,7 @@
 unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
 bool needs_rerun = false;
-bool etr_mode = false;
+bool etr_mode = true;
 
 static char *board_name = DEFAULT_BOARD_NAME;
 static const struct board *board;
