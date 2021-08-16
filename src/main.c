@@ -96,7 +96,11 @@ static libcsdec_t init_decoder(void)
     goto exit;
   }
 
-  decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size);
+  if (ptrix_decoding) {
+    decoder = libcsdec_init_ptrix_process(afl_area_ptr, afl_map_size);
+  } else {
+    decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size);
+  }
 
 exit:
   if (paths) {
@@ -202,6 +206,11 @@ static int setup_trace_config(pid_t pid)
   }
 
   if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
+    goto exit;
+  }
+
+  decoder = init_decoder();
+  if (!decoder) {
     goto exit;
   }
 
@@ -314,22 +323,27 @@ static int decode_trace(void)
     return -1;
   }
 
+  ret = LIBCSDEC_ERROR;
+
+  if (!decoder) {
+    return -1;
+  }
+
   if (ptrix_decoding) {
-    ret = libcsdec_run_ptrix(trace_buf, trace_buf_size, trace_id,
-        range_count, (struct libcsdec_memory_map *)range,
-        afl_area_ptr, afl_map_size);
+    ret = libcsdec_run_ptrix_process(decoder, trace_buf, trace_buf_size);
   } else {
-    if (!decoder) {
-      decoder = decoder ? decoder : init_decoder();
-      if (!decoder) {
-        return -1;
-      }
-    }
-    ret = libcsdec_write_bitmap(decoder, trace_buf, trace_buf_size, trace_id,
-      range_count, (struct libcsdec_memory_map *)range);
+    ret = libcsdec_run_process(decoder, trace_buf, trace_buf_size);
   }
   if (ret != LIBCEDEC_SUCCESS) {
     needs_rerun = true;
+  }
+
+  if (ptrix_decoding) {
+    ret = libcsdec_finish_ptrix_process(decoder);
+  } else {
+    ret = libcsdec_finish_process(decoder);
+  }
+  if (ret != LIBCEDEC_SUCCESS) {
     return -1;
   }
 
@@ -363,6 +377,13 @@ void start_trace(pid_t pid)
 {
   set_cpu_affinity(trace_cpu, pid);
   alloc_trace_buf();
+  if (ptrix_decoding) {
+    libcsdec_reset_ptrix_process(decoder, trace_id, range_count,
+        (struct libcsdec_memory_map *)range);
+  } else {
+    libcsdec_reset_process(decoder, trace_id, range_count,
+        (struct libcsdec_memory_map *)range);
+  }
   if (tracing_on) {
     enable_cs_trace(pid);
   }
