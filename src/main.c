@@ -42,6 +42,11 @@
 #define DEFAULT_TRACE_NAME "cstrace.bin"
 #define DEFAULT_TRACE_ARGS_NAME "decoderargs.txt"
 
+enum cov_type {
+  edge_cov,
+  path_cov,
+};
+
 unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
 bool needs_rerun = false;
@@ -67,7 +72,7 @@ static void *trace_buf = NULL;
 static size_t trace_buf_size = 0;
 static void *trace_buf_ptr = NULL;
 static bool decoding_on = false;
-static bool ptrix_decoding = true;
+static enum cov_type cov_type = edge_cov;
 
 static pthread_cond_t trace_cond;
 static pthread_mutex_t trace_mutex;
@@ -96,10 +101,13 @@ static libcsdec_t init_decoder(void)
     goto exit;
   }
 
-  if (ptrix_decoding) {
-    decoder = libcsdec_init_ptrix_process(afl_area_ptr, afl_map_size);
-  } else {
-    decoder = libcsdec_init(range_count, paths, afl_area_ptr, afl_map_size);
+  switch (cov_type) {
+    case edge_cov:
+      decoder = libcsdec_init_edge(range_count, paths, afl_area_ptr, afl_map_size);
+      break;
+    case path_cov:
+      decoder = libcsdec_init_path(afl_area_ptr, afl_map_size);
+      break;
   }
 
 exit:
@@ -329,22 +337,18 @@ static int decode_trace(void)
     return -1;
   }
 
-  if (ptrix_decoding) {
-    ret = libcsdec_run_ptrix_process(decoder, trace_buf, trace_buf_size);
-  } else {
-    ret = libcsdec_run_process(decoder, trace_buf, trace_buf_size);
+  switch (cov_type) {
+    case edge_cov:
+      ret = libcsdec_run_edge(decoder, trace_buf, trace_buf_size);
+      libcsdec_finish_edge(decoder);
+      break;
+    case path_cov:
+      ret = libcsdec_run_path(decoder, trace_buf, trace_buf_size);
+      libcsdec_finish_path(decoder);
+      break;
   }
   if (ret != LIBCEDEC_SUCCESS) {
     needs_rerun = true;
-  }
-
-  if (ptrix_decoding) {
-    ret = libcsdec_finish_ptrix_process(decoder);
-  } else {
-    ret = libcsdec_finish_process(decoder);
-  }
-  if (ret != LIBCEDEC_SUCCESS) {
-    return -1;
   }
 
   return 0;
@@ -377,12 +381,15 @@ void start_trace(pid_t pid)
 {
   set_cpu_affinity(trace_cpu, pid);
   alloc_trace_buf();
-  if (ptrix_decoding) {
-    libcsdec_reset_ptrix_process(decoder, trace_id, range_count,
-        (struct libcsdec_memory_map *)range);
-  } else {
-    libcsdec_reset_process(decoder, trace_id, range_count,
-        (struct libcsdec_memory_map *)range);
+  switch (cov_type) {
+    case edge_cov:
+      libcsdec_reset_edge(decoder, trace_id, range_count,
+          (struct libcsdec_memory_map *)range);
+      break;
+    case path_cov:
+      libcsdec_reset_path(decoder, trace_id, range_count,
+          (struct libcsdec_memory_map *)range);
+      break;
   }
   if (tracing_on) {
     enable_cs_trace(pid);
