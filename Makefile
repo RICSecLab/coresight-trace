@@ -31,8 +31,8 @@ HDRS:= \
   $(INC)/utils.h \
 
 OBJS:= \
-  src/afl.o \
   src/config.o \
+  src/cs-proxy.o \
   src/proc-trace.o \
   src/utils.o \
 
