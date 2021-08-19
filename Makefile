@@ -47,7 +47,7 @@ CFLAGS:= \
 ifneq ($(strip $(DEBUG)),)
   CFLAGS+=-g -O0
 else
-  CFLAGS+=-O2
+  CFLAGS+=-Ofast
 endif
 
 CS_PROXY_OBJS:= \
