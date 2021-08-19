@@ -33,7 +33,7 @@ HDRS:= \
 OBJS:= \
   src/afl.o \
   src/config.o \
-  src/main.o \
+  src/proc-trace.o \
   src/utils.o \
 
 CFLAGS:= \
