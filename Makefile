@@ -24,16 +24,14 @@ LIBCSDEC:=$(CSDEC_BASE)/libcsdec.a
 INC:=include
 
 HDRS:= \
-  $(INC)/afl.h \
+  $(INC)/common.h \
   $(INC)/config.h \
   $(INC)/known-boards.h \
-  $(INC)/proc-trace.h \
   $(INC)/utils.h \
 
-OBJS:= \
+COMMON_OBJS:= \
+  src/common.o \
   src/config.o \
-  src/cs-proxy.o \
-  src/proc-trace.o \
   src/utils.o \
 
 CFLAGS:= \
@@ -52,19 +50,29 @@ else
   CFLAGS+=-O2
 endif
 
-TARGET:=proc-trace
-TARGET_FLAGS?=
+CS_PROXY_OBJS:= \
+  $(COMMON_OBJS) \
+  src/cs-proxy.o \
+
+CS_PROXY:=cs-proxy
+
+PROC_TRACE_OBJS:= \
+  $(COMMON_OBJS) \
+  src/proc-trace.o \
+
+PROC_TRACE:=proc-trace
+PROC_TRACE_FLAGS?=
 
 ifneq ($(strip $(DEBUG)),)
-  TARGET_FLAGS+=--export-config=1 --verbose=2
+  PROC_TRACE_FLAGS+=--export-config=1 --verbose=2
 endif
 
 ifneq ($(strip $(NOTRACE)),)
-  TARGET_FLAGS+=--tracing=0
+  PROC_TRACE_FLAGS+=--tracing=0
 endif
 
 ifneq ($(strip $(NOPOLLING)),)
-  TARGET_FLAGS+=--tracing=1 --polling=0
+  PROC_TRACE_FLAGS+=--tracing=1 --polling=0
 endif
 
 TESTS:= \
@@ -80,25 +88,30 @@ DIR?=trace/$(DATE)
 TRACEE?=tests/fib
 TRACEE_ARGS?=
 
-all: $(TARGET) $(TESTS)
+all: $(CS_PROXY) $(PROC_TRACE) $(TESTS)
 
 decode: $(CSDEC) trace
 	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
 
-trace: $(TARGET) $(TESTS)
+trace: $(PROC_TRACE) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
+	sudo $(realpath $(PROC_TRACE)) $(PROC_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
-debug: $(TARGET) $(TESTS)
+debug: $(PROC_TRACE) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo gdb --args $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
+	sudo gdb --args $(realpath $(PROC_TRACE)) $(PROC_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
 $(LIBCSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
 
-$(TARGET): $(OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
+$(CSDEC): $(LIBCSDEC)
+
+$(CS_PROXY): $(CS_PROXY_OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
+	$(CXX) -o $@ $^ $(CFLAGS)
+
+$(PROC_TRACE): $(PROC_TRACE_OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
 	$(CXX) -o $@ $^ $(CFLAGS)
 
 libcsal:
@@ -108,7 +121,7 @@ $(LIBCSACCESS): libcsal
 $(LIBCSACCUTIL): libcsal
 
 clean:
-	rm -f $(OBJS) $(TARGET) $(TESTS)
+	rm -f $(CS_PROXY_OBJS) $(CS_PROXY) $(PROC_TRACE_OBJS) $(PROC_TRACE) $(TESTS)
 
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
