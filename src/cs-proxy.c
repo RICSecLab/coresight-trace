@@ -32,9 +32,6 @@ unsigned char is_persistent;
 
 unsigned int afl_inst_rms = MAP_SIZE;
 
-char *dec_path;
-
-extern char **dec_args;
 extern bool decoding_on;
 
 extern int registration_verbose;
@@ -246,7 +243,6 @@ int main(int argc, char *argv[])
   int n;
   char junk;
 
-  i = 1;
   argvp = NULL;
   registration_verbose = 0;
   decoding_on = true;

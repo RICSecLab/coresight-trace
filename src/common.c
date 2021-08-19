@@ -328,8 +328,6 @@ static int decode_trace(void)
     return -1;
   }
 
-  ret = LIBCSDEC_ERROR;
-
   if (!decoder) {
     return -1;
   }

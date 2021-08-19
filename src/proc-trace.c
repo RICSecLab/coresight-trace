@@ -207,7 +207,6 @@ int main(int argc, char *argv[])
   int n;
   char junk;
 
-  i = 1;
   argvp = NULL;
   registration_verbose = 0;
 
