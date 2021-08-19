@@ -27,7 +27,7 @@
 #include "libcsdec.h"
 
 #include "proc-trace.h"
-#include "known_boards.h"
+#include "known-boards.h"
 #include "config.h"
 #include "utils.h"
 #include "afl.h"

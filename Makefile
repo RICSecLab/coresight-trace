@@ -26,7 +26,7 @@ INC:=include
 HDRS:= \
   $(INC)/afl.h \
   $(INC)/config.h \
-  $(INC)/known_boards.h \
+  $(INC)/known-boards.h \
   $(INC)/proc-trace.h \
   $(INC)/utils.h \
 
