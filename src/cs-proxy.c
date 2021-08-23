@@ -6,6 +6,7 @@
 
 #include "afl/common.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -17,9 +18,13 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#include "common.h"
+#include "csaccess.h"
+#include "csregistration.h"
+#include "csregisters.h"
+#include "cs_util_create_snapshot.h"
 
-#define AFL_EXEC_TRIAL_MAX 16
+#include "config.h"
+#include "common.h"
 
 #define AFLCS_FORKSRV_FD (FORKSRV_FD - 3)
 
@@ -29,9 +34,13 @@ static int forkserver_installed = 0;
 unsigned char afl_fork_child;
 unsigned int afl_forksrv_pid;
 unsigned char is_persistent;
+pid_t child_pid = 0;
 
 unsigned int afl_inst_rms = MAP_SIZE;
 
+extern const struct board *board;
+extern struct cs_devices_t devices;
+extern bool trace_started;
 extern bool decoding_on;
 
 extern int registration_verbose;
@@ -98,7 +107,6 @@ void afl_forkserver(char *argv[])
   int proxy_ctl_pipe[2];
   int proxy_st_fd;
   int proxy_ctl_fd;
-  pid_t child_pid;
   u8 child_stopped = 0;
   u32 was_killed;
   int status;
@@ -212,11 +220,19 @@ void afl_forkserver(char *argv[])
     /* Resume child process. */
     kill(child_pid, SIGCONT);
 
-    if (read(proxy_st_fd, &status, 4) != 4) {
-      afl_exit(12);
+    while (1) {
+      if (read(proxy_st_fd, &status, 4) != 4) {
+        afl_exit(12);
+      }
+      if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) {
+        trace_suspend_resume_callback();
+      } else {
+        /* The child process exited. */
+        break;
+      }
     }
 
-    if (stop_trace(true, true) < 0) {
+    if (stop_trace() < 0) {
       afl_exit(13);
     }
 
