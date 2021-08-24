@@ -33,7 +33,6 @@
 extern int registration_verbose;
 
 extern char *board_name;
-extern struct cs_devices_t devices;
 extern bool tracing_on;
 extern bool decoding_on;
 extern int trace_cpu;
@@ -41,9 +40,6 @@ extern bool export_config;
 extern int range_count;
 extern struct addr_range range[RANGE_MAX];
 extern bool trace_started;
-
-extern unsigned long etr_ram_addr;
-extern size_t etr_ram_size;
 extern bool etr_mode;
 
 void child(char *argv[])
