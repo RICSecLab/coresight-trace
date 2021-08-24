@@ -21,6 +21,11 @@ CSDEC:=$(CSDEC_BASE)/processor
 CSDEC_INC:=$(CSDEC_BASE)/include
 LIBCSDEC:=$(CSDEC_BASE)/libcsdec.a
 
+UDMABUF_BASE:=udmabuf
+UDMABUF_KMOD:=$(UDMABUF_BASE)/u-dma-buf.ko
+UDMABUF_BUF_PATH:=/dev/udmabuf0
+UDMABUF_BUF_SIZE:=0x80000
+
 INC:=include
 
 HDRS:= \
@@ -93,12 +98,12 @@ all: $(CS_PROXY) $(PROC_TRACE) $(TESTS)
 decode: $(CSDEC) trace
 	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
 
-trace: $(PROC_TRACE) $(TESTS)
+trace: $(PROC_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
 	sudo $(realpath $(PROC_TRACE)) $(PROC_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
-debug: $(PROC_TRACE) $(TESTS)
+debug: $(PROC_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
 	sudo gdb --args $(realpath $(PROC_TRACE)) $(PROC_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
@@ -120,11 +125,18 @@ libcsal:
 $(LIBCSACCESS): libcsal
 $(LIBCSACCUTIL): libcsal
 
+$(UDMABUF_KMOD):
+	$(MAKE) -C $(UDMABUF_BASE)
+
+$(UDMABUF_BUF_PATH): $(UDMABUF_KMOD)
+	sudo insmod $^ $(notdir $@)=$(UDMABUF_BUF_SIZE)
+
 clean:
 	rm -f $(CS_PROXY_OBJS) $(CS_PROXY) $(PROC_TRACE_OBJS) $(PROC_TRACE) $(TESTS)
 
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
 	$(MAKE) -C $(CSDEC_BASE) clean
+	$(MAKE) -C $(UDMABUF_BASE) clean
 
 .PHONY: all trace debug decode libcsal clean dist-clean
