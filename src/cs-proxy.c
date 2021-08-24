@@ -38,13 +38,9 @@ pid_t child_pid = 0;
 
 unsigned int afl_inst_rms = MAP_SIZE;
 
-extern const struct board *board;
-extern struct cs_devices_t devices;
-extern bool trace_started;
-extern bool decoding_on;
-
 extern int registration_verbose;
 
+extern bool decoding_on;
 extern unsigned char *afl_area_ptr;
 extern unsigned int afl_map_size;
 
