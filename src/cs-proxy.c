@@ -204,7 +204,9 @@ void afl_forkserver(char *argv[])
 
     /* Parent. */
     if (first_run) {
-      init_trace(afl_forksrv_pid, child_pid);
+      if (init_trace(afl_forksrv_pid, child_pid) < 0) {
+        afl_exit(11);
+      }
       first_run = 0;
     }
     start_trace(child_pid, false);
