@@ -27,6 +27,24 @@
 #include <asm/ptrace.h>
 #include <asm/unistd.h>
 
+void dump_buf(void *buf, size_t buf_size, const char *buf_path)
+{
+  FILE *fp;
+  size_t fwrite_size;
+
+  fp = fopen(buf_path, "wb");
+  if (fp == NULL) {
+    perror("fopen");
+    return;
+  }
+
+  if ((fwrite_size = fwrite(buf, 1, buf_size, fp)) != buf_size) {
+    fprintf(stderr, "fwrite() failed: %ld (expected: %ld)\n", fwrite_size, buf_size);
+  }
+
+  fclose(fp);
+}
+
 void dump_mem_range(FILE *stream, struct addr_range *range, int count)
 {
   int i;
