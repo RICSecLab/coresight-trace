@@ -713,18 +713,19 @@ int init_trace(pid_t parent_pid, pid_t pid)
   pthread_sigmask(SIG_BLOCK, &sig_set, NULL);
   ret = pthread_create(&signal_handler_thread, NULL, signal_handler, NULL);
   if (ret != 0) {
-    fprintf(stderr, "pthread_create: %d\n", ret);
+    fprintf(stderr, "pthread_create() failed: %d\n", ret);
     goto exit;
   }
 
   if (decoding_on) {
     decoder = init_decoder();
     if (!decoder) {
+      fprintf(stderr, "init_decoder() failed\n");
       goto exit;
     }
     ret = pthread_create(&decoder_thread, NULL, decoder_worker, NULL);
     if (ret != 0) {
-      fprintf(stderr, "pthread_create: %d\n", ret);
+      fprintf(stderr, "pthread_create() failed: %d\n", ret);
       goto exit;
     }
   }
