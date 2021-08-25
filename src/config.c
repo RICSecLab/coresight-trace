@@ -24,15 +24,16 @@ extern int registration_verbose;
 
 void cs_etb_flush_and_wait_stop(struct cs_devices_t *devices)
 {
-  unsigned int ffcr_val, ffsr_val;
-  ffcr_val = cs_device_read(devices->etb, CS_ETB_FLFMT_CTRL);
-  ffcr_val |= CS_ETB_FLFMT_CTRL_FOnMan;
-  cs_device_write(devices->etb, CS_ETB_FLFMT_CTRL, ffcr_val);
-  if (cs_device_wait(devices->etb, CS_ETB_FLFMT_STATUS,
-        CS_ETB_FLFMT_STATUS_FtStopped, CS_REG_WAITBITS_ALL_1, 0, &ffsr_val)
-      == 0) {
-  } else {
-    fprintf(stderr, "ETB collection not stopped on flush on trigger. FFSR: 0x%08x\n", ffsr_val);
+  unsigned int ffcr_val, status_val;
+
+  if (cs_sink_is_enabled(devices->etb)) {
+    ffcr_val = cs_device_read(devices->etb, CS_ETB_FLFMT_CTRL);
+    ffcr_val |= CS_ETB_FLFMT_CTRL_FOnMan;
+    cs_device_write(devices->etb, CS_ETB_FLFMT_CTRL, ffcr_val);
+    if (cs_device_wait(devices->etb, CS_ETB_STATUS, CS_ETB_STATUS_FtEmpty,
+          CS_REG_WAITBITS_ALL_1, 0, &status_val) != 0) {
+      fprintf(stderr, "ETB collection not stopped on flush on trigger. STS: 0x%08x\n", status_val);
+    }
   }
 }
 
@@ -294,6 +295,7 @@ int disable_trace(const struct board *board, struct cs_devices_t *devices)
     return -1;
   }
 
+  /* Set FFCR:FlushMan bit to stop capture. */
   cs_etb_flush_and_wait_stop(devices);
 
   for (i = 0; i < board->n_cpu; ++i) {
