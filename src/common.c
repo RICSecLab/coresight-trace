@@ -68,13 +68,6 @@ typedef enum {
   resume_event,
 } trace_event_t;
 
-typedef enum {
-  decoder_init_event,
-  decoder_fini_event,
-  decoder_reset_event,
-  decoder_decode_event,
-} decoder_event_t;
-
 char *board_name = DEFAULT_BOARD_NAME;
 const struct board *board;
 struct cs_devices_t devices;
@@ -117,7 +110,7 @@ static trace_event_t trace_event = init_event;
 
 static pthread_mutex_t trace_decoder_mutex;
 static pthread_cond_t trace_decoder_cond;
-static decoder_event_t decoder_event = decoder_init_event;
+static bool decoder_ready = true;
 
 extern int registration_verbose;
 
@@ -139,23 +132,6 @@ static void wait_trace_event(trace_event_t event)
     pthread_cond_wait(&trace_event_cond, &trace_event_mutex);
   }
   pthread_mutex_unlock(&trace_event_mutex);
-}
-
-static void signal_decoder_event(decoder_event_t event)
-{
-  pthread_mutex_lock(&trace_decoder_mutex);
-  decoder_event = event;
-  pthread_cond_broadcast(&trace_decoder_cond);
-  pthread_mutex_unlock(&trace_decoder_mutex);
-}
-
-static void wait_decoder_event(decoder_event_t event)
-{
-  pthread_mutex_lock(&trace_decoder_mutex);
-  while (decoder_event != event) {
-    pthread_cond_wait(&trace_decoder_cond, &trace_decoder_mutex);
-  }
-  pthread_mutex_unlock(&trace_decoder_mutex);
 }
 
 static void set_trace_state(trace_state_t new_state)
@@ -190,6 +166,11 @@ static int trace_sink_polling(void)
   unsigned long init_pos;
   unsigned long curr_offset;
   unsigned long decoding_threshold = 0x200;
+
+  pthread_mutex_lock(&trace_decoder_mutex);
+  decoder_ready = false;
+  pthread_cond_broadcast(&trace_decoder_cond);
+  pthread_mutex_unlock(&trace_decoder_mutex);
 
   ret = 0;
   init_pos = cs_get_buffer_rwp(devices.etb);
@@ -242,6 +223,11 @@ static int trace_sink_polling(void)
   }
 
 exit:
+  pthread_mutex_lock(&trace_decoder_mutex);
+  decoder_ready = true;
+  pthread_cond_broadcast(&trace_decoder_cond);
+  pthread_mutex_unlock(&trace_decoder_mutex);
+
   return ret;
 }
 
@@ -253,7 +239,8 @@ static void *decoder_worker(void *arg)
 
   while (1) {
     pthread_mutex_lock(&trace_event_mutex);
-    while (trace_event != start_event && trace_event != fini_event) {
+    while (trace_event != start_event
+        && trace_event != fini_event) {
       pthread_cond_wait(&trace_event_cond, &trace_event_mutex);
     }
     event = trace_event; /* TODO: trace_event can be changed in if cond. */
@@ -309,8 +296,6 @@ static int reset_decoder(void)
       break;
   }
 
-  signal_decoder_event(decoder_reset_event);
-
   return (ret == LIBCEDEC_SUCCESS) ? 0 : -1;
 }
 
@@ -331,8 +316,6 @@ static int run_decoder(void *buf, size_t buf_size)
       ret = libcsdec_run_path(decoder, buf, buf_size);
       break;
   }
-
-  signal_decoder_event(decoder_decode_event);
 
   return (ret == LIBCEDEC_SUCCESS) ? 0 : -1;
 }
@@ -367,8 +350,6 @@ static libcsdec_t init_decoder(void)
       break;
   }
 
-  signal_decoder_event(decoder_init_event);
-
 exit:
   if (paths) {
     free(paths);
@@ -392,8 +373,6 @@ static int fini_decoder(void)
       libcsdec_finish_path(decoder);
       break;
   }
-
-  signal_decoder_event(decoder_fini_event);
 
   return 0;
 }
@@ -596,10 +575,12 @@ int decode_trace(void)
   
   ret = run_decoder(buf, buf_size);
   if (ret < 0) {
-    return ret;
+    goto exit;
   }
 
   decoded_trace_buf = (void *)((char *)buf + buf_size);
+
+exit:
 
   return ret;
 }
@@ -659,7 +640,13 @@ int stop_trace(void)
   }
 
   set_trace_state(ready_state);
-  wait_decoder_event(decoder_decode_event);
+
+  /* FIXME: Hang with condition trace_state == ready_state && trace_event == stop_event */
+  pthread_mutex_lock(&trace_decoder_mutex);
+  while (!decoder_ready) {
+    pthread_cond_wait(&trace_decoder_cond, &trace_decoder_mutex);
+  }
+  pthread_mutex_unlock(&trace_decoder_mutex);
 
 exit:
   return ret;
