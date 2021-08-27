@@ -1,33 +1,18 @@
-/*
-   american fuzzy lop++ - afl-proxy skeleton example
-   ---------------------------------------------------
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2019-2020 AFLplusplus Project. All rights reserved. */
 
-   Written by Marc Heuse <mh@mh-sec.de>
-
-   Copyright 2019-2020 AFLplusplus Project. All rights reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at:
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-
-   HOW-TO
-   ======
-
-   You only need to change the while() loop of the main() to send the
-   data of buf[] with length len to the target and write the coverage
-   information to __afl_area_ptr[__afl_map_size]
-
-
-*/
-
-#ifdef __ANDROID__
-  #include "android-ashmem.h"
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
 #endif
+#ifdef __ANDROID__
+  #include "afl/android-ashmem.h"
+#endif
+#include "afl/config.h"
+#include "afl/types.h"
+#include "afl/debug.h"
+
 #include "config.h"
-#include "types.h"
+#include "common.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,13 +29,19 @@
 #include <sys/types.h>
 #include <fcntl.h>
 
-u8 *__afl_area_ptr;
+#define AFLCS_FORKSRV_FD (FORKSRV_FD - 3)
 
-#ifdef __ANDROID__
-u32 __afl_map_size = MAP_SIZE;
-#else
-__thread u32 __afl_map_size = MAP_SIZE;
-#endif
+char *__afl_proxy_name = "afl-cs-proxy";
+
+s32 fsrv_pid = -1;
+s32 proxy_ctl_fd = -1;
+s32 proxy_st_fd = -1;
+u8 first_run = 1;
+
+/* TODO: Remove extern variables. */
+extern bool decoding_on;
+extern unsigned char *afl_area_ptr;
+extern int afl_map_size;
 
 /* Error reporting to forkserver controller */
 
@@ -70,27 +61,23 @@ static void __afl_map_shm(void) {
   char *id_str = getenv(SHM_ENV_VAR);
   char *ptr;
 
-  /* NOTE TODO BUG FIXME: if you want to supply a variable sized map then
-     uncomment the following: */
 
-  /*
   if ((ptr = getenv("AFL_MAP_SIZE")) != NULL) {
 
     u32 val = atoi(ptr);
-    if (val > 0) __afl_map_size = val;
+    if (val > 0) afl_map_size = val;
 
   }
 
-  */
 
-  if (__afl_map_size > MAP_SIZE) {
+  if (afl_map_size > MAP_SIZE) {
 
-    if (__afl_map_size > FS_OPT_MAX_MAPSIZE) {
+    if (afl_map_size > FS_OPT_MAX_MAPSIZE) {
 
       fprintf(stderr,
-              "Error: AFL++ tools *require* to set AFL_MAP_SIZE to %u to "
+              "Error: %s *require* to set AFL_MAP_SIZE to %u to "
               "be able to run this instrumented program!\n",
-              __afl_map_size);
+              __afl_proxy_name, afl_map_size);
       if (id_str) {
 
         send_forkserver_error(FS_ERROR_MAP_SIZE);
@@ -101,9 +88,9 @@ static void __afl_map_shm(void) {
     } else {
 
       fprintf(stderr,
-              "Warning: AFL++ tools will need to set AFL_MAP_SIZE to %u to "
+              "Warning: %s will need to set AFL_MAP_SIZE to %u to "
               "be able to run this instrumented program!\n",
-              __afl_map_size);
+              __afl_proxy_name, afl_map_size);
 
     }
 
@@ -128,7 +115,7 @@ static void __afl_map_shm(void) {
 
     /* map the shared memory segment to the address space of the process */
     shm_base =
-        mmap(0, __afl_map_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        mmap(0, afl_map_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 
     if (shm_base == MAP_FAILED) {
 
@@ -141,15 +128,15 @@ static void __afl_map_shm(void) {
 
     }
 
-    __afl_area_ptr = shm_base;
+    afl_area_ptr = shm_base;
 #else
     u32 shm_id = atoi(id_str);
 
-    __afl_area_ptr = shmat(shm_id, 0, 0);
+    afl_area_ptr = shmat(shm_id, 0, 0);
 
 #endif
 
-    if (__afl_area_ptr == (void *)-1) {
+    if (afl_area_ptr == (void *)-1) {
 
       send_forkserver_error(FS_ERROR_SHMAT);
       exit(1);
@@ -158,7 +145,7 @@ static void __afl_map_shm(void) {
 
     /* Write something into the bitmap so that the parent doesn't give up */
 
-    __afl_area_ptr[0] = 1;
+    afl_area_ptr[0] = 1;
 
   }
 
@@ -166,44 +153,102 @@ static void __afl_map_shm(void) {
 
 /* Fork server logic. */
 
-static void __afl_start_forkserver(void) {
+static void __afl_start_forkserver(char *argv[]) {
 
   u8  tmp[4] = {0, 0, 0, 0};
   u32 status = 0;
+  int st_pipe[2], ctl_pipe[2];
 
-  if (__afl_map_size <= FS_OPT_MAX_MAPSIZE)
-    status |= (FS_OPT_SET_MAPSIZE(__afl_map_size) | FS_OPT_MAPSIZE);
-  if (status) status |= (FS_OPT_ENABLED);
-  memcpy(tmp, &status, 4);
+  /* Mark as AFL++ CoreSight mode is enabled. */
+  setenv("__AFLCS_ENABLE", "1", 0);
+
+  if (pipe(st_pipe) || pipe(ctl_pipe)) { PFATAL("pipe() failed"); }
+
+  fsrv_pid = fork();
+  if (fsrv_pid < 0) { PFATAL("fork() failed"); }
+
+  if (!fsrv_pid) {
+
+    /* Child Process */
+
+    if (dup2(ctl_pipe[0], AFLCS_FORKSRV_FD) < 0) { PFATAL("dup2() failed"); }
+    if (dup2(st_pipe[1], AFLCS_FORKSRV_FD + 1) < 0) { PFATAL("dup2() failed"); }
+
+    close(ctl_pipe[0]);
+    close(ctl_pipe[1]);
+    close(st_pipe[0]);
+    close(st_pipe[1]);
+
+    close(FORKSRV_FD);
+    close(FORKSRV_FD + 1);
+
+    execvp(argv[0], argv);
+
+    FATAL("Error: execv to target failed\n");
+
+  }
+
+  /* Parent Process */
+
+  close(ctl_pipe[0]);
+  close(st_pipe[1]);
+
+  proxy_ctl_fd = ctl_pipe[1];
+  proxy_st_fd = st_pipe[0];
+
+  if (read(proxy_st_fd, &tmp, 4) != 4) { PFATAL("read() failed"); }
+  memcpy(&status, tmp, 4);
+
+  if (!status) {
+
+    if (afl_map_size <= FS_OPT_MAX_MAPSIZE)
+      status |= (FS_OPT_SET_MAPSIZE(afl_map_size) | FS_OPT_MAPSIZE);
+    if (status) status |= (FS_OPT_ENABLED);
+    memcpy(tmp, &status, 4);
+
+  }
 
   /* Phone home and tell the parent that we're OK. */
 
-  if (write(FORKSRV_FD + 1, tmp, 4) != 4) return;
+  if (write(FORKSRV_FD + 1, tmp, 4) != 4) { PFATAL("write() failed"); }
 
 }
 
-static u32 __afl_next_testcase(u8 *buf, u32 max_len) {
+static u32 __afl_next_testcase(void) {
 
-  s32 status, res = 0xffffff;
+  s32 was_killed, child_pid;
 
   /* Wait for parent by reading from the pipe. Abort if read fails. */
-  if (read(FORKSRV_FD, &status, 4) != 4) return 0;
+  if (read(FORKSRV_FD, &was_killed, 4) != 4) return 1;
+  if (write(proxy_ctl_fd, &was_killed, 4) != 4) return -1;
 
-  /* we have a testcase - read it */
-  status = read(0, buf, max_len);
+  /* Wait for child by reading from the pipe. Abort if read fails. */
+  if (read(proxy_st_fd, &child_pid, 4) != 4) return -1;
+
+  if (unlikely(first_run)) {
+
+    if (init_trace(fsrv_pid, child_pid) < 0) return -1;
+    first_run = 0;
+
+  }
+
+  start_trace(child_pid, false);
 
   /* report that we are starting the target */
-  if (write(FORKSRV_FD + 1, &res, 4) != 4) return 0;
+  if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) return -1;
 
-  return status;
+  /* Resume child process. */
+  kill(child_pid, SIGCONT);
+
+  return child_pid;
 
 }
 
-static void __afl_end_testcase(void) {
+static s32 __afl_end_testcase(s32 status) {
 
-  int status = 0xffffff;
+  if (write(FORKSRV_FD + 1, &status, 4) != 4) return -1;
 
-  if (write(FORKSRV_FD + 1, &status, 4) != 4) exit(1);
+  return 0;
 
 }
 
@@ -211,37 +256,52 @@ static void __afl_end_testcase(void) {
 
 int main(int argc, char *argv[]) {
 
-  /* This is were the testcase data is written into */
-  u8  buf[1024];  // this is the maximum size for a test case! set it!
-  s32 len;
+  s32 status;
+  int i;
+  char **argvp;
+
+  argvp = NULL;
+  registration_verbose = 0;
+  decoding_on = true;
 
   /* here you specify the map size you need that you are reporting to
      afl-fuzz.  Any value is fine as long as it can be divided by 32. */
-  __afl_map_size = MAP_SIZE;  // default is 65536
+  afl_map_size = MAP_SIZE;  // default is 65536
+
+  if (argc < 3) {
+    return -1;
+  }
+
+  for (i = 1; i < argc; i++) {
+    if (!strcmp(argv[i], "--") && i + 1 < argc) {
+      argvp = &argv[++i];
+      break;
+    } else if (argc > 2 && i + 1 >= argc) {
+      FATAL("Invalid option '%s'", argv[i]);
+    }
+  }
 
   /* then we initialize the shared memory map and start the forkserver */
   __afl_map_shm();
-  __afl_start_forkserver();
+  __afl_start_forkserver(argvp);
 
-  while ((len = __afl_next_testcase(buf, sizeof(buf))) > 0) {
+  while (__afl_next_testcase() > 0) {
 
-    if (len > 4) {  // the minimum data size you need for the target
-
-      /* here you have to create the magic that feeds the buf/len to the
-         target and write the coverage to __afl_area_ptr */
-
-      // ... the magic ...
-
-      // remove this, this is just to make afl-fuzz not complain when run
-      if (buf[0] == 0xff)
-        __afl_area_ptr[1] = 1;
-      else
-        __afl_area_ptr[2] = 2;
-
+    /* Handle child process suspend/resume */
+    while (1) {
+      if (read(proxy_st_fd, &status, 4) != 4) return -1;
+      if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) {
+        trace_suspend_resume_callback();
+      } else  {
+        /* Child process has exited. */
+        break;
+      }
     }
 
+  if (stop_trace() < 0) return -1;
+
     /* report the test case is done and wait for the next */
-    __afl_end_testcase();
+    if (__afl_end_testcase(status) < 0) return -1;
 
   }
 
