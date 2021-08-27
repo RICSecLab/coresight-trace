@@ -57,7 +57,7 @@ endif
 
 CS_PROXY_OBJS:= \
   $(COMMON_OBJS) \
-  src/afl-cs-proxy.o \
+  src/cs-proxy.o \
 
 CS_PROXY:=cs-proxy
 
