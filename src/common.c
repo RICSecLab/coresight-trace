@@ -296,7 +296,7 @@ static int reset_decoder(void)
       break;
   }
 
-  return (ret == LIBCEDEC_SUCCESS) ? 0 : -1;
+  return (ret == LIBCSDEC_SUCCESS) ? 0 : -1;
 }
 
 /* TODO: Take cov_type as a argument. */
@@ -317,7 +317,7 @@ static int run_decoder(void *buf, size_t buf_size)
       break;
   }
 
-  return (ret == LIBCEDEC_SUCCESS) ? 0 : -1;
+  return (ret == LIBCSDEC_SUCCESS) ? 0 : -1;
 }
 
 static libcsdec_t init_decoder(void)
