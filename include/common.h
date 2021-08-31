@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2021 Ricerca Security, Inc. All rights reserved. */
 
 #ifndef CS_TRACE_COMMON_H
 #define CS_TRACE_COMMON_H

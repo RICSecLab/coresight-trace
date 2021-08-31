@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright 2019-2020 AFLplusplus Project. All rights reserved. */
+/* Copyright 2021 Ricerca Security, Inc. All rights reserved. */
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
