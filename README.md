@@ -1,4 +1,4 @@
-# proc-trace
+# coresight-trace
 
 ## Usage
 

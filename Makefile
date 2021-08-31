@@ -61,23 +61,23 @@ CS_PROXY_OBJS:= \
 
 CS_PROXY:=cs-proxy
 
-PROC_TRACE_OBJS:= \
+CS_TRACE_OBJS:= \
   $(COMMON_OBJS) \
-  src/proc-trace.o \
+  src/cs-trace.o \
 
-PROC_TRACE:=proc-trace
-PROC_TRACE_FLAGS?=
+CS_TRACE:=cs-trace
+CS_TRACE_FLAGS?=
 
 ifneq ($(strip $(DEBUG)),)
-  PROC_TRACE_FLAGS+=--export-config=1 --verbose=2
+  CS_TRACE_FLAGS+=--export-config=1 --verbose=2
 endif
 
 ifneq ($(strip $(NOTRACE)),)
-  PROC_TRACE_FLAGS+=--tracing=0
+  CS_TRACE_FLAGS+=--tracing=0
 endif
 
 ifneq ($(strip $(NOPOLLING)),)
-  PROC_TRACE_FLAGS+=--tracing=1 --polling=0
+  CS_TRACE_FLAGS+=--tracing=1 --polling=0
 endif
 
 TESTS:= \
@@ -93,20 +93,20 @@ DIR?=trace/$(DATE)
 TRACEE?=tests/fib
 TRACEE_ARGS?=
 
-all: $(CS_PROXY) $(PROC_TRACE) $(TESTS)
+all: $(CS_PROXY) $(CS_TRACE) $(TESTS)
 
 decode: $(CSDEC) trace
 	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
 
-trace: $(PROC_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
+trace: $(CS_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo $(realpath $(PROC_TRACE)) $(PROC_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
+	sudo $(realpath $(CS_TRACE)) $(CS_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
-debug: $(PROC_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
+debug: $(CS_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo gdb --args $(realpath $(PROC_TRACE)) $(PROC_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
+	sudo gdb --args $(realpath $(CS_TRACE)) $(CS_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
 $(LIBCSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
@@ -116,7 +116,7 @@ $(CSDEC): $(LIBCSDEC)
 $(CS_PROXY): $(CS_PROXY_OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
 	$(CXX) -o $@ $^ $(CFLAGS)
 
-$(PROC_TRACE): $(PROC_TRACE_OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
+$(CS_TRACE): $(CS_TRACE_OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
 	$(CXX) -o $@ $^ $(CFLAGS)
 
 libcsal:
@@ -132,7 +132,7 @@ $(UDMABUF_BUF_PATH): $(UDMABUF_KMOD)
 	sudo insmod $^ $(notdir $@)=$(UDMABUF_BUF_SIZE)
 
 clean:
-	rm -f $(CS_PROXY_OBJS) $(CS_PROXY) $(PROC_TRACE_OBJS) $(PROC_TRACE) $(TESTS)
+	rm -f $(CS_PROXY_OBJS) $(CS_PROXY) $(CS_TRACE_OBJS) $(CS_TRACE) $(TESTS)
 
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)

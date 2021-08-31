@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#ifndef PROC_TRACE_UTILS_H
-#define PROC_TRACE_UTILS_H
+#ifndef CS_TRACE_UTILS_H
+#define CS_TRACE_UTILS_H
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -46,4 +46,4 @@ struct addr_range *append_mmap_exec_region(pid_t pid,
 int get_udmabuf_info(const char *udmabuf_name,
     unsigned long *phys_addr, size_t *size);
 
-#endif /* PROC_TRACE_UTILS_H */
+#endif /* CS_TRACE_UTILS_H */

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#ifndef PROC_TRACE_CONFIG_H
-#define PROC_TRACE_CONFIG_H
+#ifndef CS_TRACE_CONFIG_H
+#define CS_TRACE_CONFIG_H
 
 #include <sys/types.h>
 
@@ -19,4 +19,4 @@ int disable_trace(const struct board *board, struct cs_devices_t *devices);
 int enable_trace_sinks(const struct board *board, struct cs_devices_t *devices);
 int disable_trace_sinks(const struct board *board, struct cs_devices_t *devices);
 
-#endif /* PROC_TRACE_CONFIG_H */
+#endif /* CS_TRACE_CONFIG_H */

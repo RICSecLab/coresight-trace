@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-#ifndef PROC_TRACE_KNOWN_BOARDS_H
-#define PROC_TRACE_KNOWN_BOARDS_H
+#ifndef CS_TRACE_KNOWN_BOARDS_H
+#define CS_TRACE_KNOWN_BOARDS_H
 
 #include "csregistration.h"
 
@@ -303,4 +303,4 @@ int get_trace_id(const char *hardware, int cpu)
   return -1; 
 }
 
-#endif /* PROC_TRACE_KNOWN_BOARDS_H */
+#endif /* CS_TRACE_KNOWN_BOARDS_H */
