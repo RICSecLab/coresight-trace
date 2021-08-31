@@ -27,6 +27,24 @@
 #include <asm/ptrace.h>
 #include <asm/unistd.h>
 
+void dump_buf(void *buf, size_t buf_size, const char *buf_path)
+{
+  FILE *fp;
+  size_t fwrite_size;
+
+  fp = fopen(buf_path, "wb");
+  if (fp == NULL) {
+    perror("fopen");
+    return;
+  }
+
+  if ((fwrite_size = fwrite(buf, 1, buf_size, fp)) != buf_size) {
+    fprintf(stderr, "fwrite() failed: %ld (expected: %ld)\n", fwrite_size, buf_size);
+  }
+
+  fclose(fp);
+}
+
 void dump_mem_range(FILE *stream, struct addr_range *range, int count)
 {
   int i;
@@ -42,7 +60,6 @@ void dump_maps(FILE *stream, pid_t pid)
   char maps_path[PATH_MAX];
   char *line;
   size_t n;
-  ssize_t readn;
 
   memset(maps_path, 0, sizeof(maps_path));
   snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
@@ -55,7 +72,7 @@ void dump_maps(FILE *stream, pid_t pid)
 
   line = NULL;
   n = 0;
-  while ((readn = getline(&line, &n, fp)) != -1) {
+  while (getline(&line, &n, fp) != -1) {
     fprintf(stream, "%s", line);
   }
 
@@ -78,7 +95,6 @@ int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
   unsigned long start;
   unsigned long end;
   int count;
-  int i;
   char c;
   char x;
   char *p;
@@ -92,10 +108,8 @@ int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
     return -1;
   }
 
-  i = 0;
   line = NULL;
   n = 0;
-  readn = 0;
   count = 0;
   while ((readn = getline(&line, &n, fp)) != -1) {
     if (readn > 0 && line[readn - 1] == '\n') {
@@ -106,7 +120,7 @@ int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
     if (x != 'x') {
       continue;
     }
-    if (i >= count_max) {
+    if (count >= count_max) {
       fprintf(stderr, "WARNING: [0x%lx-0x%lx] will not trace\n", start, end);
       continue;
     }
@@ -115,19 +129,17 @@ int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
     for (p = line; *p != '\0' && *p != '/'; p++) {
     }
     if (*p == '/') {
-      strncpy(range[i].path, p, PATH_MAX - 1);
-      range[i].path[PATH_MAX - 1] = '\0';
-      range[i].start = start;
-      range[i].end = end;
-      i++;
+      strncpy(range[count].path, p, PATH_MAX - 1);
+      range[count].path[PATH_MAX - 1] = '\0';
+      range[count].start = start;
+      range[count].end = end;
+      count++;
     }
   }
 
   if (line != NULL) {
     free(line);
   }
-
-  count = i;
 
   return count;
 }
@@ -138,8 +150,6 @@ int export_decoder_args(int trace_id, const char *trace_path,
   FILE *fp;
   int i;
   int ret;
-
-  ret = 0;
 
   if (trace_id < 0 || !trace_path || !args_path || !range) {
     return -1;
@@ -382,13 +392,12 @@ static long get_pid_syscall_regs(pid_t pid, struct user_pt_regs *regs)
 int get_mmap_params(pid_t pid, struct mmap_params *params)
 {
   struct user_pt_regs regs;
-  long syscall;
 
   if (!params) {
     return -1;
   }
 
-  if ((syscall = get_pid_syscall_regs(pid, &regs)) != __NR_mmap) {
+  if (get_pid_syscall_regs(pid, &regs) != __NR_mmap) {
     return -1;
   }
 
@@ -457,7 +466,6 @@ int get_udmabuf_info(const char *udmabuf_name,
   memset(udmabuf_path, '\0', sizeof(udmabuf_path));
   snprintf(udmabuf_path, sizeof(udmabuf_path), "%s/%s",
       udmabuf_root, udmabuf_name);
-  ret = stat(udmabuf_path, &sb);
   if (stat(udmabuf_path, &sb) != 0 || (!S_ISDIR(sb.st_mode))) {
     fprintf(stderr, "u-dma-buf device '%s' not found\n",
         udmabuf_name);

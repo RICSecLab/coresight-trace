@@ -1,6 +1,7 @@
 bench
 tags
 trace
+cs-proxy
 proc-trace
 *.o
 *.bin

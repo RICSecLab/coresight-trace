@@ -21,19 +21,22 @@ CSDEC:=$(CSDEC_BASE)/processor
 CSDEC_INC:=$(CSDEC_BASE)/include
 LIBCSDEC:=$(CSDEC_BASE)/libcsdec.a
 
+UDMABUF_BASE:=udmabuf
+UDMABUF_KMOD:=$(UDMABUF_BASE)/u-dma-buf.ko
+UDMABUF_BUF_PATH:=/dev/udmabuf0
+UDMABUF_BUF_SIZE:=0x80000
+
 INC:=include
 
 HDRS:= \
-  $(INC)/afl.h \
+  $(INC)/common.h \
   $(INC)/config.h \
-  $(INC)/known_boards.h \
-  $(INC)/proc-trace.h \
+  $(INC)/known-boards.h \
   $(INC)/utils.h \
 
-OBJS:= \
-  src/afl.o \
+COMMON_OBJS:= \
+  src/common.o \
   src/config.o \
-  src/main.o \
   src/utils.o \
 
 CFLAGS:= \
@@ -49,22 +52,32 @@ CFLAGS:= \
 ifneq ($(strip $(DEBUG)),)
   CFLAGS+=-g -O0
 else
-  CFLAGS+=-O2
+  CFLAGS+=-Ofast
 endif
 
-TARGET:=proc-trace
-TARGET_FLAGS?=
+CS_PROXY_OBJS:= \
+  $(COMMON_OBJS) \
+  src/cs-proxy.o \
+
+CS_PROXY:=cs-proxy
+
+PROC_TRACE_OBJS:= \
+  $(COMMON_OBJS) \
+  src/proc-trace.o \
+
+PROC_TRACE:=proc-trace
+PROC_TRACE_FLAGS?=
 
 ifneq ($(strip $(DEBUG)),)
-  TARGET_FLAGS+=--export-config=1 --verbose=2
+  PROC_TRACE_FLAGS+=--export-config=1 --verbose=2
 endif
 
 ifneq ($(strip $(NOTRACE)),)
-  TARGET_FLAGS+=--tracing=0
+  PROC_TRACE_FLAGS+=--tracing=0
 endif
 
 ifneq ($(strip $(NOPOLLING)),)
-  TARGET_FLAGS+=--tracing=1 --polling=0
+  PROC_TRACE_FLAGS+=--tracing=1 --polling=0
 endif
 
 TESTS:= \
@@ -80,25 +93,30 @@ DIR?=trace/$(DATE)
 TRACEE?=tests/fib
 TRACEE_ARGS?=
 
-all: $(TARGET) $(TESTS)
+all: $(CS_PROXY) $(PROC_TRACE) $(TESTS)
 
 decode: $(CSDEC) trace
 	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
 
-trace: $(TARGET) $(TESTS)
+trace: $(PROC_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
+	sudo $(realpath $(PROC_TRACE)) $(PROC_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
-debug: $(TARGET) $(TESTS)
+debug: $(PROC_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
-	sudo gdb --args $(realpath $(TARGET)) $(TARGET_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
+	sudo gdb --args $(realpath $(PROC_TRACE)) $(PROC_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
 $(LIBCSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
 
-$(TARGET): $(OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
+$(CSDEC): $(LIBCSDEC)
+
+$(CS_PROXY): $(CS_PROXY_OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
+	$(CXX) -o $@ $^ $(CFLAGS)
+
+$(PROC_TRACE): $(PROC_TRACE_OBJS) $(LIBCSACCESS) $(LIBCSACCUTIL) $(LIBCSDEC)
 	$(CXX) -o $@ $^ $(CFLAGS)
 
 libcsal:
@@ -107,11 +125,18 @@ libcsal:
 $(LIBCSACCESS): libcsal
 $(LIBCSACCUTIL): libcsal
 
+$(UDMABUF_KMOD):
+	$(MAKE) -C $(UDMABUF_BASE)
+
+$(UDMABUF_BUF_PATH): $(UDMABUF_KMOD)
+	sudo insmod $^ $(notdir $@)=$(UDMABUF_BUF_SIZE)
+
 clean:
-	rm -f $(OBJS) $(TARGET) $(TESTS)
+	rm -f $(CS_PROXY_OBJS) $(CS_PROXY) $(PROC_TRACE_OBJS) $(PROC_TRACE) $(TESTS)
 
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
 	$(MAKE) -C $(CSDEC_BASE) clean
+	$(MAKE) -C $(UDMABUF_BASE) clean
 
 .PHONY: all trace debug decode libcsal clean dist-clean
