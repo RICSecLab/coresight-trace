@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) ARM Limited, 2013-2016. All rights reserved. */
+/* Copyright 2021 Ricerca Security, Inc. All rights reserved. */
 
 #ifndef CS_TRACE_CONFIG_H
 #define CS_TRACE_CONFIG_H

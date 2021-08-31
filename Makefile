@@ -1,4 +1,6 @@
 #!/usr/bin/env make
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2021 Ricerca Security, Inc. All rights reserved.
 
 SHELL:=bash
 

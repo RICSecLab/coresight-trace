@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2021 Ricerca Security, Inc. All rights reserved. */
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
