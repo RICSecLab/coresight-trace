@@ -1,289 +1,311 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2019-2020 AFLplusplus Project. All rights reserved. */
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-
-#include "afl/common.h"
-
-#include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
-#include <signal.h>
-#include <unistd.h>
-
-#include <sys/shm.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-
-#include "csaccess.h"
-#include "csregistration.h"
-#include "csregisters.h"
-#include "cs_util_create_snapshot.h"
+#ifdef __ANDROID__
+  #include "afl/android-ashmem.h"
+#endif
+#include "afl/config.h"
+#include "afl/types.h"
+#include "afl/debug.h"
 
 #include "config.h"
 #include "common.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
+#include <string.h>
+#include <assert.h>
+#include <stdint.h>
+#include <errno.h>
+
+#include <sys/mman.h>
+#include <sys/shm.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <fcntl.h>
+
 #define AFLCS_FORKSRV_FD (FORKSRV_FD - 3)
 
-static bool forkserver_mode = true;
-static int forkserver_installed = 0;
+char *__afl_proxy_name = "afl-cs-proxy";
 
-unsigned char afl_fork_child;
-unsigned int afl_forksrv_pid;
-unsigned char is_persistent;
-pid_t child_pid = 0;
+s32 fsrv_pid = -1;
+s32 proxy_ctl_fd = -1;
+s32 proxy_st_fd = -1;
+u8 first_run = 1;
 
-unsigned int afl_inst_rms = MAP_SIZE;
-
-extern int registration_verbose;
-
+/* TODO: Remove extern variables. */
 extern bool decoding_on;
 extern unsigned char *afl_area_ptr;
-extern unsigned int afl_map_size;
+extern int afl_map_size;
 
-static void afl_exit(int status)
-{
-  if (afl_forksrv_pid) {
-    kill(afl_forksrv_pid, SIGKILL);
-  }
-  exit(status);
+/* Error reporting to forkserver controller */
+
+void send_forkserver_error(int error) {
+
+  u32 status;
+  if (!error || error > 0xffff) return;
+  status = (FS_OPT_ERROR | FS_OPT_SET_ERROR(error));
+  if (write(FORKSRV_FD + 1, (char *)&status, 4) != 4) return;
+
 }
 
-void afl_setup(void)
-{
-  char *id_str;
-  char *inst_r;
-  int shm_id;
+/* SHM setup. */
 
-  setenv("__AFLCS_ENABLE", "1", 0);
+static void __afl_map_shm(void) {
 
-  inst_r = getenv("AFL_INST_RATIO");
-  if (inst_r) {
-    unsigned int r;
+  char *id_str = getenv(SHM_ENV_VAR);
+  char *ptr;
 
-    r = atoi(inst_r);
 
-    if (r  > 100) {
-      r = 100;
-    }
-    if (!r) {
-      r = 1;
-    }
+  if ((ptr = getenv("AFL_MAP_SIZE")) != NULL) {
 
-    afl_inst_rms = MAP_SIZE * r / 100;
+    u32 val = atoi(ptr);
+    if (val > 0) afl_map_size = val;
+
   }
 
-  id_str = getenv(SHM_ENV_VAR);
+
+  if (afl_map_size > MAP_SIZE) {
+
+    if (afl_map_size > FS_OPT_MAX_MAPSIZE) {
+
+      fprintf(stderr,
+              "Error: %s *require* to set AFL_MAP_SIZE to %u to "
+              "be able to run this instrumented program!\n",
+              __afl_proxy_name, afl_map_size);
+      if (id_str) {
+
+        send_forkserver_error(FS_ERROR_MAP_SIZE);
+        exit(-1);
+
+      }
+
+    } else {
+
+      fprintf(stderr,
+              "Warning: %s will need to set AFL_MAP_SIZE to %u to "
+              "be able to run this instrumented program!\n",
+              __afl_proxy_name, afl_map_size);
+
+    }
+
+  }
+
   if (id_str) {
-    shm_id = atoi(id_str);
-    afl_area_ptr = shmat(shm_id, NULL, 0);
+
+#ifdef USEMMAP
+    const char *   shm_file_path = id_str;
+    int            shm_fd = -1;
+    unsigned char *shm_base = NULL;
+
+    /* create the shared memory segment as if it was a file */
+    shm_fd = shm_open(shm_file_path, O_RDWR, 0600);
+    if (shm_fd == -1) {
+
+      fprintf(stderr, "shm_open() failed\n");
+      send_forkserver_error(FS_ERROR_SHM_OPEN);
+      exit(1);
+
+    }
+
+    /* map the shared memory segment to the address space of the process */
+    shm_base =
+        mmap(0, afl_map_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+
+    if (shm_base == MAP_FAILED) {
+
+      close(shm_fd);
+      shm_fd = -1;
+
+      fprintf(stderr, "mmap() failed\n");
+      send_forkserver_error(FS_ERROR_MMAP);
+      exit(2);
+
+    }
+
+    afl_area_ptr = shm_base;
+#else
+    u32 shm_id = atoi(id_str);
+
+    afl_area_ptr = shmat(shm_id, 0, 0);
+
+#endif
 
     if (afl_area_ptr == (void *)-1) {
+
+      send_forkserver_error(FS_ERROR_SHMAT);
       exit(1);
+
     }
 
-    /* With AFL_INST_RATIO set to low value, we want to touch the bitmap
-     * so that the parent doesn't give up on us. */
-    if (inst_r) {
-      afl_area_ptr[0] = 1;
-    }
+    /* Write something into the bitmap so that the parent doesn't give up */
+
+    afl_area_ptr[0] = 1;
+
   }
 
-  /* TODO: Support persistent mode */
 }
 
-void afl_forkserver(char *argv[])
-{
-  unsigned char tmp[4] = {0};
-  int first_run;
-  int proxy_st_pipe[2];
-  int proxy_ctl_pipe[2];
-  int proxy_st_fd;
-  int proxy_ctl_fd;
-  u8 child_stopped = 0;
-  u32 was_killed;
-  int status;
+/* Fork server logic. */
 
-  if (forkserver_installed == 1) {
-    return;
-  }
-  forkserver_installed = 1;
+static void __afl_start_forkserver(char *argv[]) {
 
-  if (pipe(proxy_st_pipe) || pipe(proxy_ctl_pipe)) {
-    fprintf(stderr, "[AFL] ERROR: pipe() failed\n");
-    exit(1);
-  }
+  u8  tmp[4] = {0, 0, 0, 0};
+  u32 status = 0;
+  int st_pipe[2], ctl_pipe[2];
 
-  afl_forksrv_pid = fork();
-  if (afl_forksrv_pid < 0) {
-    fprintf(stderr, "[AFL] ERROR: fork() failed\n");
-    exit(2);
-  }
+  /* Mark as AFL++ CoreSight mode is enabled. */
+  setenv("__AFLCS_ENABLE", "1", 0);
 
-  if (!afl_forksrv_pid) {
-    /* Child process. Close descriptors and run free. */
-    if (dup2(proxy_ctl_pipe[0], AFLCS_FORKSRV_FD) < 0) {
-      fprintf(stderr, "[AFL] ERROR: dup2() failed\n");
-      exit(3);
-    }
-    if (dup2(proxy_st_pipe[1], AFLCS_FORKSRV_FD + 1) < 0) {
-      fprintf(stderr, "[AFL] ERROR: dup2() failed\n");
-      exit(4);
-    }
-    afl_fork_child = 1;
-    close(proxy_ctl_pipe[0]);
-    close(proxy_ctl_pipe[1]);
-    close(proxy_st_pipe[0]);
-    close(proxy_st_pipe[1]);
+  if (pipe(st_pipe) || pipe(ctl_pipe)) { PFATAL("pipe() failed"); }
+
+  fsrv_pid = fork();
+  if (fsrv_pid < 0) { PFATAL("fork() failed"); }
+
+  if (!fsrv_pid) {
+
+    /* Child Process */
+
+    if (dup2(ctl_pipe[0], AFLCS_FORKSRV_FD) < 0) { PFATAL("dup2() failed"); }
+    if (dup2(st_pipe[1], AFLCS_FORKSRV_FD + 1) < 0) { PFATAL("dup2() failed"); }
+
+    close(ctl_pipe[0]);
+    close(ctl_pipe[1]);
+    close(st_pipe[0]);
+    close(st_pipe[1]);
+
     close(FORKSRV_FD);
     close(FORKSRV_FD + 1);
 
     execvp(argv[0], argv);
 
-    return;
+    FATAL("Error: execv to target failed\n");
+
   }
 
-  /* Parent. */
-  close(proxy_ctl_pipe[0]);
-  close(proxy_st_pipe[1]);
-  proxy_ctl_fd = proxy_ctl_pipe[1];
-  proxy_st_fd = proxy_st_pipe[0];
+  /* Parent Process */
 
-  if (read(proxy_st_fd, tmp, 4) != 4) {
-    afl_exit(5);
-  }
+  close(ctl_pipe[0]);
+  close(st_pipe[1]);
 
+  proxy_ctl_fd = ctl_pipe[1];
+  proxy_st_fd = st_pipe[0];
+
+  if (read(proxy_st_fd, &tmp, 4) != 4) { PFATAL("read() failed"); }
   memcpy(&status, tmp, 4);
-  if (getenv("AFL_DEBUG")) {
-    fprintf(stderr, "Debug: Sending status %08x\n", status);
+
+  if (!status) {
+
+    if (afl_map_size <= FS_OPT_MAX_MAPSIZE)
+      status |= (FS_OPT_SET_MAPSIZE(afl_map_size) | FS_OPT_MAPSIZE);
+    if (status) status |= (FS_OPT_ENABLED);
+    memcpy(tmp, &status, 4);
+
   }
 
-  /* Tell the parent that we're alive. If the parent doesn't want
-   * to talk, assume that we're not running in forkserver mode. */
-  if (write(FORKSRV_FD + 1, tmp, 4) != 4) {
-    afl_exit(6);
-  }
+  /* Phone home and tell the parent that we're OK. */
 
-  first_run = 1;
+  if (write(FORKSRV_FD + 1, tmp, 4) != 4) { PFATAL("write() failed"); }
 
-  /* All right, let's await orders... */
-  while (1) {
-    /* Whoops, parent dead? */
-    if (read(FORKSRV_FD, &was_killed, 4) != 4) {
-      afl_exit(7);
-    }
-
-    if (write(proxy_ctl_fd, &was_killed, 4) != 4) {
-      afl_exit(8);
-    }
-
-    /* If we stopped the child in persistent mode, but there was a race
-     * condition and afl-fuzz already issued SIGKILL, wriite off the old
-     * process. */
-    if (child_stopped && was_killed) {
-      child_stopped = 0;
-      if (waitpid(child_pid, &status, 0) < 0) {
-        afl_exit(9);
-      }
-    }
-
-    if (!child_stopped) {
-      /* Wait for target by reading from the pipe. */
-      if (read(proxy_st_fd, &child_pid, 4) != 4) {
-        afl_exit(10);
-      }
-    } else {
-      /* Special handling for persistent mode: if the child is alive but
-       * currently stopped, simple restart it with SIGCONT. */
-      kill(child_pid, SIGCONT);
-      child_stopped = 0;
-    }
-
-    /* Parent. */
-    if (first_run) {
-      if (init_trace(afl_forksrv_pid, child_pid) < 0) {
-        afl_exit(11);
-      }
-      first_run = 0;
-    }
-    start_trace(child_pid, false);
-
-    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) {
-      afl_exit(11);
-    }
-
-    /* Resume child process. */
-    kill(child_pid, SIGCONT);
-
-    while (1) {
-      if (read(proxy_st_fd, &status, 4) != 4) {
-        afl_exit(12);
-      }
-      if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) {
-        trace_suspend_resume_callback();
-      } else {
-        /* The child process exited. */
-        break;
-      }
-    }
-
-    if (stop_trace() < 0) {
-      afl_exit(13);
-    }
-
-    /* In persistent mode, the child stops itself with SIGSTOP to indicate
-     * a successfull run. In this case, we want to wake it up without forking
-     * again. */
-    if (WIFSTOPPED(status)) {
-      child_stopped = 1;
-    } else if (first_run && is_persistent) {
-      fprintf(stderr, "[AFL] ERROR: no persistent iteration executed\n");
-      afl_exit(14);
-    }
-
-    if (write(FORKSRV_FD + 1, &status, 4) != 4) {
-      afl_exit(15);
-    }
-  }
 }
 
-int main(int argc, char *argv[])
-{
-  char **argvp;
+static u32 __afl_next_testcase(void) {
+
+  s32 was_killed, child_pid;
+
+  /* Wait for parent by reading from the pipe. Abort if read fails. */
+  if (read(FORKSRV_FD, &was_killed, 4) != 4) return 1;
+  if (write(proxy_ctl_fd, &was_killed, 4) != 4) return -1;
+
+  /* Wait for child by reading from the pipe. Abort if read fails. */
+  if (read(proxy_st_fd, &child_pid, 4) != 4) return -1;
+
+  if (unlikely(first_run)) {
+
+    if (init_trace(fsrv_pid, child_pid) < 0) return -1;
+    first_run = 0;
+
+  }
+
+  start_trace(child_pid, false);
+
+  /* report that we are starting the target */
+  if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) return -1;
+
+  /* Resume child process. */
+  kill(child_pid, SIGCONT);
+
+  return child_pid;
+
+}
+
+static s32 __afl_end_testcase(s32 status) {
+
+  if (write(FORKSRV_FD + 1, &status, 4) != 4) return -1;
+
+  return 0;
+
+}
+
+/* you just need to modify the while() loop in this main() */
+
+int main(int argc, char *argv[]) {
+
+  s32 status;
   int i;
-  int n;
-  char junk;
+  char **argvp;
 
   argvp = NULL;
   registration_verbose = 0;
   decoding_on = true;
 
+  /* here you specify the map size you need that you are reporting to
+     afl-fuzz.  Any value is fine as long as it can be divided by 32. */
+  afl_map_size = MAP_SIZE;  // default is 65536
+
   if (argc < 3) {
-    exit(EXIT_FAILURE);
+    return -1;
   }
 
   for (i = 1; i < argc; i++) {
-    if (sscanf(argv[i], "--forkserver=%d%c", &n, &junk) == 1
-        && (n == 0 || n == 1)) {
-      forkserver_mode = n ? true : false;
-    } else if (!strcmp(argv[i], "--") && i + 1 < argc) {
+    if (!strcmp(argv[i], "--") && i + 1 < argc) {
       argvp = &argv[++i];
       break;
     } else if (argc > 2 && i + 1 >= argc) {
-      fprintf(stderr, "Invalid option '%s'\n", argv[i]);
-      exit(EXIT_FAILURE);
+      FATAL("Invalid option '%s'", argv[i]);
     }
   }
 
-  if (!forkserver_mode || !argvp) {
-    exit(EXIT_FAILURE);
+  /* then we initialize the shared memory map and start the forkserver */
+  __afl_map_shm();
+  __afl_start_forkserver(argvp);
+
+  while (__afl_next_testcase() > 0) {
+
+    /* Handle child process suspend/resume */
+    while (1) {
+      if (read(proxy_st_fd, &status, 4) != 4) return -1;
+      if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) {
+        trace_suspend_resume_callback();
+      } else  {
+        /* Child process has exited. */
+        break;
+      }
+    }
+
+  if (stop_trace() < 0) return -1;
+
+    /* report the test case is done and wait for the next */
+    if (__afl_end_testcase(status) < 0) return -1;
+
   }
 
-  afl_setup();
-  afl_forkserver(argvp);
-
   return 0;
+
 }
+
