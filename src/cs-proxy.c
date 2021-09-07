@@ -30,9 +30,10 @@
 #include <sys/types.h>
 #include <fcntl.h>
 
+#define AFLCS_PROXY_NAME "afl-cs-proxy"
 #define AFLCS_FORKSRV_FD (FORKSRV_FD - 3)
 
-char *__afl_proxy_name = "afl-cs-proxy";
+char *__afl_proxy_name = AFLCS_PROXY_NAME;
 
 s32 fsrv_pid = -1;
 s32 proxy_ctl_fd = -1;
@@ -261,6 +262,10 @@ int main(int argc, char *argv[]) {
   int i;
   char **argvp;
 
+  if (argc < 3) {
+    return -1;
+  }
+
   argvp = NULL;
   registration_verbose = 0;
   decoding_on = true;
@@ -268,10 +273,7 @@ int main(int argc, char *argv[]) {
   /* here you specify the map size you need that you are reporting to
      afl-fuzz.  Any value is fine as long as it can be divided by 32. */
   afl_map_size = MAP_SIZE;  // default is 65536
-
-  if (argc < 3) {
-    return -1;
-  }
+  __afl_proxy_name = argv[0];
 
   for (i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--") && i + 1 < argc) {
