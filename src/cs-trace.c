@@ -42,7 +42,6 @@ extern bool export_config;
 extern int range_count;
 extern struct addr_range range[RANGE_MAX];
 extern bool trace_started;
-extern bool etr_mode;
 extern cov_type_t cov_type;
 
 void child(char *argv[])

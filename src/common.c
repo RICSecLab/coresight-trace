@@ -76,7 +76,6 @@ size_t etr_ram_size = 0;
 int range_count = 0;
 struct addr_range range[RANGE_MAX];
 bool trace_started = false;
-bool etr_mode = true;
 cov_type_t cov_type = edge_cov;
 
 static unsigned char dummy[MAP_SIZE];
@@ -669,8 +668,7 @@ int init_trace(pid_t parent_pid, pid_t pid)
     trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
   }
 
-  if (etr_mode
-      && get_udmabuf_info(udmabuf_name, &etr_ram_addr, &etr_ram_size) < 0) {
+  if (get_udmabuf_info(udmabuf_name, &etr_ram_addr, &etr_ram_size) < 0) {
     fprintf(stderr, "Failed to get u-dma-buf info\n");
     goto exit;
   }

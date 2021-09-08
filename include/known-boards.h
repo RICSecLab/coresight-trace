@@ -9,7 +9,7 @@
 
 #include <stdbool.h>
 
-extern bool etr_mode;
+const bool etr_mode = true; /* etr_mode switches ETF and ETR. */
 
 int get_trace_id(const char *hardware, int cpu);
 
