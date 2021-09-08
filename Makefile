@@ -71,7 +71,7 @@ CS_TRACE:=cs-trace
 CS_TRACE_FLAGS?=
 
 ifneq ($(strip $(DEBUG)),)
-  CS_TRACE_FLAGS+=--export-config=1 --verbose=2
+  CS_TRACE_FLAGS+=--export --verbose=2
 endif
 
 ifneq ($(strip $(NOTRACE)),)

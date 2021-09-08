@@ -47,11 +47,6 @@
   } while (0);
 
 typedef enum {
-  edge_cov,
-  path_cov,
-} cov_type_t;
-
-typedef enum {
   init_state,
   fini_state,
   ready_state,
@@ -82,6 +77,7 @@ int range_count = 0;
 struct addr_range range[RANGE_MAX];
 bool trace_started = false;
 bool etr_mode = true;
+cov_type_t cov_type = edge_cov;
 
 static unsigned char dummy[MAP_SIZE];
 unsigned char *afl_area_ptr = dummy;
@@ -96,7 +92,6 @@ static void *trace_buf = NULL;
 static size_t trace_buf_size = 0;
 static void *trace_buf_ptr = NULL;
 static void *decoded_trace_buf = NULL;
-static cov_type_t cov_type = path_cov;
 static sigset_t sig_set;
 
 static pthread_t decoder_thread;

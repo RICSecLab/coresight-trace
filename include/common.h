@@ -7,6 +7,11 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
+typedef enum {
+  edge_cov,
+  path_cov,
+} cov_type_t;
+
 int fetch_trace(void);
 int decode_trace(void);
 int init_trace(pid_t parent_pid, pid_t pid);

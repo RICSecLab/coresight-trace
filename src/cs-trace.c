@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <getopt.h>
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
@@ -42,6 +43,7 @@ extern int range_count;
 extern struct addr_range range[RANGE_MAX];
 extern bool trace_started;
 extern bool etr_mode;
+extern cov_type_t cov_type;
 
 void child(char *argv[])
 {
@@ -109,21 +111,30 @@ static void usage(char *argv0)
   fprintf(stderr, "Usage: %s [OPTIONS] -- EXE [ARGS]\n", argv0);
   fprintf(stderr, "CoreSight process tracer\n");
   fprintf(stderr, "[OPTIONS]\n");
-  fprintf(stderr, "  --cpu=INT\t\t\tbind traced process to CPU (default: %d)\n", trace_cpu);
-  fprintf(stderr, "  --tracing={0,1}\t\tenable tracing (default: %d)\n", tracing_on);
-  fprintf(stderr, "  --decoding={0,1}\t\tenable trace decoding (default: %d)\n", decoding_on);
-  fprintf(stderr, "  --export-config={0,1}\t\tenable exporting config (default: %d)\n", export_config);
-  fprintf(stderr, "  --verbose=INT\t\t\tverbose output level (default: %d)\n", registration_verbose);
-  fprintf(stderr, "  --help\t\t\tshow this help\n");
+  fprintf(stderr, "  -b, --board=NAME\t\tspecify board name (default: %s)\n", board_name);
+  fprintf(stderr, "  -c, --cpu=INT\t\t\tbind traced process to CPU (default: %d)\n", trace_cpu);
+  fprintf(stderr, "  -d, --decoding={edge,path}\tenable trace decoding (default: off)\n");
+  fprintf(stderr, "  -e, --export\t\t\tenable exporting config (default: %d)\n", export_config);
+  fprintf(stderr, "  -v, --verbose=[INT]\t\tverbose output level (default: %d)\n", registration_verbose);
+  fprintf(stderr, "  -h, --help\t\t\tshow this help\n");
 }
 
 int main(int argc, char *argv[])
 {
+  const struct option long_options[] = {
+    {"board", required_argument, NULL, 'b'},
+    {"cpu", required_argument, NULL, 'c'},
+    {"decoding", required_argument, NULL, 'd'},
+    {"export", no_argument, NULL, 'e'},
+    {"verbose", optional_argument, NULL, 'v'},
+    {"help", no_argument, NULL, 'h'},
+    {0, 0, 0, 0},
+  };
+
   char **argvp;
   pid_t pid;
-  int i;
-  int n;
-  char junk;
+  int opt;
+  int option_index;
 
   argvp = NULL;
   registration_verbose = 0;
@@ -133,38 +144,49 @@ int main(int argc, char *argv[])
     exit(EXIT_SUCCESS);
   }
 
-  for (i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "--board") == 0 && i + 1 < argc) {
-      board_name = argv[++i];
-    } else if (sscanf(argv[i], "--cpu=%d%c", &n, &junk) == 1) {
-      trace_cpu = n;
-    } else if (sscanf(argv[i], "--tracing=%d%c", &n, &junk) == 1
-        && (n == 0 || n == 1)) {
-      tracing_on = n ? true : false;
-    } else if (sscanf(argv[i], "--etr=%d%c", &n, &junk) == 1
-        && (n == 0 || n == 1)) {
-      etr_mode = n ? true : false;
-    } else if (sscanf(argv[i], "--export-config=%d%c", &n, &junk) == 1
-        && (n == 0 || n == 1)) {
-      export_config = n ? true : false;
-    } else if (sscanf(argv[i], "--decoding=%d%c", &n, &junk) == 1
-        && (n == 0 || n == 1)) {
-      decoding_on = n ? true : false;
-    } else if (sscanf(argv[i], "--verbose=%d%c", &n, &junk) == 1
-        && (n >= 0)) {
-      registration_verbose = n;
-    } else if (!strcmp(argv[i], "--help")) {
-      usage(argv[0]);
-      exit(EXIT_SUCCESS);
-    } else if (!strcmp(argv[i], "--") && i + 1 < argc) {
-      argvp = &argv[++i];
-      break;
-    } else if (argc > 2 && i + 1 >= argc) {
-      fprintf(stderr, "Invalid option '%s'\n", argv[i]);
-      exit(EXIT_FAILURE);
+  while ((opt = getopt_long(argc, argv, "b:c:d:ev::h", long_options, &option_index)) != -1) {
+    switch (opt) {
+      case 'b':
+        board_name = optarg;
+        break;
+      case 'c':
+        trace_cpu = atoi(optarg);
+        break;
+      case 'd':
+        if (!strcmp(optarg, "edge")) {
+          cov_type = edge_cov;
+        } else if (!strcmp(optarg, "path")) {
+          cov_type = path_cov;
+        } else {
+          fprintf(stderr, "Unknown coverage type '%s'\n", optarg);
+          exit(EXIT_FAILURE);
+        }
+        break;
+      case 'e':
+        export_config = true;
+        break;
+      case 'v':
+        if (optarg) {
+          registration_verbose = atoi(optarg);
+        } else {
+          registration_verbose = 1;
+        }
+        break;
+      case 'h':
+        usage(argv[0]);
+        exit(EXIT_SUCCESS);
+        break;
+      default:
+        break;
     }
   }
 
+  if (argc <= optind || strcmp(argv[optind - 1], "--")) {
+    usage(argv[0]);
+    exit(EXIT_FAILURE);
+  }
+
+  argvp = &argv[optind];
   if (!argvp) {
     usage(argv[0]);
     exit(EXIT_FAILURE);
