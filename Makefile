@@ -4,6 +4,8 @@
 
 SHELL:=bash
 
+DEFAULT_BOARD?="Marvell ThunderX2"
+
 CSAL_BASE:=CSAL
 CSAL_ARCH:=arm64
 ifneq ($(strip $(DEBUG)),)
@@ -43,6 +45,7 @@ COMMON_OBJS:= \
 CFLAGS:= \
   -std=c11 \
   -Wall \
+  -DDEFAULT_BOARD_NAME=\"$(DEFAULT_BOARD)\" \
   -I$(INC) \
   -I$(CSAL_INC) \
   -I$(CSDEC_INC) \

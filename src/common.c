@@ -34,7 +34,6 @@
 #include "config.h"
 #include "utils.h"
 
-#define DEFAULT_BOARD_NAME "Marvell ThunderX2"
 #define DEFAULT_TRACE_CPU 0
 #define DEFAULT_UDMABUF_NAME "udmabuf0"
 #define DEFAULT_ETF_SIZE 0x1000

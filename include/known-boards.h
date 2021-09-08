@@ -5,6 +5,10 @@
 #ifndef CS_TRACE_KNOWN_BOARDS_H
 #define CS_TRACE_KNOWN_BOARDS_H
 
+#if !defined(DEFAULT_BOARD_NAME)
+#error "DEFAULT_BOARD_NAME must be specified"
+#endif
+
 #include "csregistration.h"
 
 #include <stdbool.h>
