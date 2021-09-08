@@ -14,7 +14,7 @@
 #define PAGE_SIZE 0x1000
 #define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
 
-#define RANGE_MAX (32)
+#define RANGE_MAX (1)
 
 struct addr_range {
   unsigned long start;

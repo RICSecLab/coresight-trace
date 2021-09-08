@@ -56,40 +56,20 @@ void child(char *argv[])
 void parent(pid_t pid, int *child_status)
 {
   int wstatus;
-  struct mmap_params mmap_params;
-  bool is_entered_mmap;
-
-  is_entered_mmap = false;
 
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     init_trace(getpid(), pid);
     start_trace(pid, true);
+    ptrace(PTRACE_CONT, pid, NULL, NULL);
   }
 
   while (1) {
-    ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
     waitpid(pid, &wstatus, 0);
     if (WIFEXITED(wstatus)) {
       stop_trace();
       fini_trace();
       break;
-    } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGTRAP) {
-      // TODO: It should support mprotect
-      if (get_mmap_params(pid, &mmap_params) < 0) {
-        // Not mmap syscall. Do nothing
-        if (is_syscall_exit_group(pid)) {
-          // exit_group syscall.
-          if (registration_verbose > 0) {
-            dump_maps(stderr, pid);
-          }
-        }
-      } else {
-        if (is_entered_mmap) {
-          append_mmap_exec_region(pid, &mmap_params, range, range_count);
-        }
-        is_entered_mmap = !is_entered_mmap;
-      }
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGSTOP) {
       trace_suspend_resume_callback();
     }
