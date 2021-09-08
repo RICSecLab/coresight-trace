@@ -315,18 +315,7 @@ static int run_decoder(void *buf, size_t buf_size)
 
 static libcsdec_t init_decoder(void)
 {
-  const char **paths;
   libcsdec_t decoder;
-  int i;
-
-  paths = malloc(sizeof(char *) * range_count);
-  if (!paths) {
-    decoder = (libcsdec_t)NULL;
-    goto exit;
-  }
-  for (i = 0; i < range_count; i++) {
-    paths[i] = range[i].path;
-  }
 
   /* FIXME: Do not use AFL specific variables inside common function */
   if (!afl_area_ptr || afl_map_size == 0) {
@@ -336,7 +325,7 @@ static libcsdec_t init_decoder(void)
 
   switch (cov_type) {
     case edge_cov:
-      decoder = libcsdec_init_edge(range_count, paths, afl_area_ptr, afl_map_size);
+      decoder = libcsdec_init_edge(afl_area_ptr, afl_map_size);
       break;
     case path_cov:
       decoder = libcsdec_init_path(afl_area_ptr, afl_map_size);
@@ -344,10 +333,6 @@ static libcsdec_t init_decoder(void)
   }
 
 exit:
-  if (paths) {
-    free(paths);
-  }
-
   return decoder;
 }
 
