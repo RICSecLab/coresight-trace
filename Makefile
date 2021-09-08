@@ -69,15 +69,7 @@ CS_TRACE:=cs-trace
 CS_TRACE_FLAGS?=
 
 ifneq ($(strip $(DEBUG)),)
-  CS_TRACE_FLAGS+=--export --verbose=2
-endif
-
-ifneq ($(strip $(NOTRACE)),)
-  CS_TRACE_FLAGS+=--tracing=0
-endif
-
-ifneq ($(strip $(NOPOLLING)),)
-  CS_TRACE_FLAGS+=--tracing=1 --polling=0
+  CS_TRACE_FLAGS+=--export --verbose=0
 endif
 
 TESTS:= \
