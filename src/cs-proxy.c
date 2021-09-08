@@ -44,6 +44,7 @@ u8 first_run = 1;
 extern bool decoding_on;
 extern unsigned char *afl_area_ptr;
 extern int afl_map_size;
+extern cov_type_t cov_type;
 
 /* Error reporting to forkserver controller */
 
@@ -160,9 +161,22 @@ static void __afl_start_forkserver(char *argv[]) {
   u8  tmp[4] = {0, 0, 0, 0};
   u32 status = 0;
   int st_pipe[2], ctl_pipe[2];
+  char *ptr;
 
   /* Mark as AFL++ CoreSight mode is enabled. */
   setenv("__AFLCS_ENABLE", "1", 0);
+
+  if ((ptr = getenv("AFLCS_COV")) != NULL) {
+
+    if (!strcmp(ptr, "edge")) {
+      cov_type = edge_cov;
+    } else if (!strcmp(ptr, "path")) {
+      cov_type = path_cov;
+    } else {
+      FATAL("Error: unknown coverage type '%s'", ptr);
+    }
+
+  }
 
   if (pipe(st_pipe) || pipe(ctl_pipe)) { PFATAL("pipe() failed"); }
 
