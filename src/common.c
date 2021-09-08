@@ -277,6 +277,8 @@ static int reset_decoder(void)
     return -1;
   }
 
+  ret = LIBCSDEC_ERROR;
+
   switch (cov_type) {
     case edge_cov:
       ret = libcsdec_reset_edge(decoder, trace_id, range_count,
@@ -286,6 +288,8 @@ static int reset_decoder(void)
       ret = libcsdec_reset_path(decoder, trace_id, range_count,
           (struct libcsdec_memory_map *)range);
       break;
+    default:
+      return -1;
   }
 
   return (ret == LIBCSDEC_SUCCESS) ? 0 : -1;
@@ -300,6 +304,8 @@ static int run_decoder(void *buf, size_t buf_size)
     return -1;
   }
 
+  ret = LIBCSDEC_ERROR;
+
   switch (cov_type) {
     case edge_cov:
       ret = libcsdec_run_edge(decoder, buf, buf_size);
@@ -307,6 +313,8 @@ static int run_decoder(void *buf, size_t buf_size)
     case path_cov:
       ret = libcsdec_run_path(decoder, buf, buf_size);
       break;
+    default:
+      return -1;
   }
 
   return (ret == LIBCSDEC_SUCCESS) ? 0 : -1;
@@ -328,6 +336,9 @@ static libcsdec_t init_decoder(void)
       break;
     case path_cov:
       decoder = libcsdec_init_path(afl_area_ptr, afl_map_size);
+      break;
+    default:
+      decoder = (libcsdec_t)NULL;
       break;
   }
 
