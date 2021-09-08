@@ -249,7 +249,8 @@ int enable_trace(const struct board *board, struct cs_devices_t *devices)
     return -1;
   }
 
-  if (cs_sink_etr_setup(devices->etb, etr_ram_addr, etr_ram_size) != 0) {
+  if (cs_sink_etr_setup(devices->etb, etr_ram_addr, etr_ram_size,
+        board->etr_axictl) != 0) {
     fprintf(stderr, "Failed to setup ETR\n");
     return -1;
   }

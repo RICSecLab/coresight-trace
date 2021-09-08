@@ -13,6 +13,8 @@
 
 #include <stdbool.h>
 
+#define AXICTL_COMMON (CS_ETB_AXICTL_PROT_CTL_B1 | CS_ETB_AXICTL_AXCACHE_OS)
+
 const bool etr_mode = true; /* etr_mode switches ETF and ETR. */
 
 int get_trace_id(const char *hardware, int cpu);
@@ -271,6 +273,7 @@ static int do_registration_jetsontx2(struct cs_devices_t *devices)
   for (int i = 0; i < 4; i++) {
       devices->cpu_id[i] = 0xD07;
   }
+
   return 0;
 }
 
@@ -279,14 +282,17 @@ const struct board known_boards[] = {
     .do_registration = do_registration_thunderx2,
     .n_cpu = 32, /* XXX: To limit initialized CPU ETMs */
     .hardware = "Marvell ThunderX2",
+    .etr_axictl = AXICTL_COMMON | CS_ETB_AXICTL_WR_BURST_16,
   }, {
     .do_registration = do_registration_jetson_nano,
     .n_cpu = 4,
     .hardware = "Jetson Nano",
+    .etr_axictl = AXICTL_COMMON | CS_ETB_AXICTL_WR_BURST_4,
   }, {
     .do_registration = do_registration_jetsontx2,
     .n_cpu = 4,
     .hardware = "Jetson TX2",
+    .etr_axictl = AXICTL_COMMON | CS_ETB_AXICTL_WR_BURST_4,
   },
   {},
 };
