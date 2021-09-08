@@ -100,12 +100,12 @@ all: $(CS_PROXY) $(CS_TRACE) $(TESTS)
 decode: $(CSDEC) trace
 	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
 
-trace: $(CS_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
+trace: $(CS_TRACE) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
 	sudo $(realpath $(CS_TRACE)) $(CS_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
-debug: $(CS_TRACE) $(TESTS) $(UDMABUF_BUF_PATH)
+debug: $(CS_TRACE) $(TESTS)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
 	sudo gdb --args $(realpath $(CS_TRACE)) $(CS_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
