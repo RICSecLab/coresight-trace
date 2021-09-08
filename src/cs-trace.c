@@ -35,7 +35,6 @@
 extern int registration_verbose;
 
 extern char *board_name;
-extern bool tracing_on;
 extern bool decoding_on;
 extern int trace_cpu;
 extern bool export_config;
@@ -74,7 +73,7 @@ void parent(pid_t pid, int *child_status)
     ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
     waitpid(pid, &wstatus, 0);
     if (WIFEXITED(wstatus)) {
-      if (tracing_on && trace_started == true) {
+      if (trace_started == true) {
         stop_trace();
         fini_trace();
       }

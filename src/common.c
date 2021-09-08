@@ -67,7 +67,6 @@ typedef enum {
 char *board_name = DEFAULT_BOARD_NAME;
 const struct board *board;
 struct cs_devices_t devices;
-bool tracing_on = true;
 bool decoding_on = false;
 int trace_cpu = -1;
 bool export_config = false;
@@ -595,10 +594,6 @@ int start_trace(pid_t pid, bool use_pid_trace)
     goto exit;
   }
 
-  if (!tracing_on) {
-    goto exit;
-  }
-
   alloc_trace_buf();
 
   if (decoding_on && ((ret = reset_decoder()) < 0)) {
@@ -678,11 +673,9 @@ int init_trace(pid_t parent_pid, pid_t pid)
     goto exit;
   }
 
-  if (tracing_on) {
-    if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
-      fprintf(stderr, "setup_named_board() failed\n");
-      goto exit;
-    }
+  if (setup_named_board(board_name, &board, &devices, known_boards) < 0) {
+    fprintf(stderr, "setup_named_board() failed\n");
+    goto exit;
   }
 
   if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
@@ -715,7 +708,7 @@ int init_trace(pid_t parent_pid, pid_t pid)
   ret = 0;
 
 exit:
-  if (tracing_on && ret != 0) {
+  if (ret != 0) {
     cs_shutdown();
   }
 
