@@ -13,7 +13,6 @@ else
 endif
 CSAL_INC:=$(CSAL_BASE)/include
 CSAL_LIB:=$(CSAL_BASE)/lib/$(CSAL_ARCH)/$(CSAL_BUILD)
-CSAL_DEMO:=$(CSAL_BASE)/demos
 CSAL_FLAGS:=ARCH=$(CSAL_ARCH) NO_DIAG=1 NO_CHECK=1
 LIBCSACCESS:=$(CSAL_LIB)/libcsaccess.a
 LIBCSACCUTIL:=$(CSAL_LIB)/libcsacc_util.a
@@ -46,7 +45,6 @@ CFLAGS:= \
   -Wall \
   -I$(INC) \
   -I$(CSAL_INC) \
-  -I$(CSAL_DEMO) \
   -I$(CSDEC_INC) \
   -lpthread \
   -lcapstone \
