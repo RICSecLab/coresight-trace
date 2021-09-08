@@ -40,7 +40,6 @@ extern int trace_cpu;
 extern bool export_config;
 extern int range_count;
 extern struct addr_range range[RANGE_MAX];
-extern bool trace_started;
 extern cov_type_t cov_type;
 
 void child(char *argv[])
@@ -60,7 +59,6 @@ void parent(pid_t pid, int *child_status)
   struct mmap_params mmap_params;
   bool is_entered_mmap;
 
-  trace_started = false;
   is_entered_mmap = false;
 
   waitpid(pid, &wstatus, 0);
@@ -73,10 +71,8 @@ void parent(pid_t pid, int *child_status)
     ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
     waitpid(pid, &wstatus, 0);
     if (WIFEXITED(wstatus)) {
-      if (trace_started == true) {
-        stop_trace();
-        fini_trace();
-      }
+      stop_trace();
+      fini_trace();
       break;
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGTRAP) {
       // TODO: It should support mprotect

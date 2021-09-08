@@ -74,7 +74,6 @@ unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
 int range_count = 0;
 struct addr_range range[RANGE_MAX];
-bool trace_started = false;
 cov_type_t cov_type = edge_cov;
 
 static unsigned char dummy[MAP_SIZE];
@@ -473,7 +472,6 @@ static int enable_cs_trace(pid_t pid)
     do_dump_config(board, &devices, 0);
   }
 
-  trace_started = true;
   ret = 0;
 
 exit:
@@ -495,8 +493,6 @@ static int disable_cs_trace(void)
     fprintf(stderr, "disable_trace() failed\n");
     goto exit;
   }
-
-  trace_started = false;
 
 exit:
   pthread_mutex_unlock(&trace_mutex);
