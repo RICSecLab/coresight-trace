@@ -1,0 +1,42 @@
+name: coresight-trace Build
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install build-essential git make wget g++-aarch64-linux-gnu
+      - name: Install Capstone
+        run: |
+          wget https://github.com/aquynh/capstone/archive/4.0.2.tar.gz
+          tar xf 4.0.2.tar.gz
+          cd capstone-4.0.2
+          CC=aarch64-linux-gnu-gcc \
+          CXX=aarch64-linux-gnu-g++ \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CAPSTONE_ARCHS="aarch64" \
+          PREFIX=/usr/aarch64-linux-gnu \
+          sudo -E ./make.sh install
+      - name: Checkout AFL++
+        uses: actions/checkout@v2
+        with:
+          repository: RICSecLab/AFLplusplus-cs
+          ref: retrage/cs-mode-support
+          path: AFLplusplus
+      - name: Checkout coresight-trace
+        uses: actions/checkout@v2
+        with:
+          path: AFLplusplus/cs_mode/coresight-trace
+          submodules: true
+      - name: Build coresight-trace
+        run: make
+        working-directory: AFLplusplus/cs_mode/coresight-trace
+        env:
+          CROSS_COMPILE: aarch64-linux-gnu-
+          CC: aarch64-linux-gnu-gcc
+          CXX: aarch64-linux-gnu-g++
+
