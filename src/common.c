@@ -33,7 +33,7 @@
 #include "utils.h"
 
 #define DEFAULT_TRACE_CPU 0
-#define DEFAULT_UDMABUF_NAME "udmabuf0"
+#define DEFAULT_UDMABUF_NUM 0
 #define DEFAULT_ETF_SIZE 0x1000
 #define DEFAULT_TRACE_SIZE 0x80000
 #define DEFAULT_TRACE_NAME "cstrace.bin"
@@ -64,6 +64,7 @@ typedef enum {
 char *board_name = DEFAULT_BOARD_NAME;
 const struct board *board;
 struct cs_devices_t devices;
+int udmabuf_num = DEFAULT_UDMABUF_NUM;
 bool decoding_on = false;
 int trace_cpu = -1;
 bool export_config = false;
@@ -76,7 +77,6 @@ cov_type_t cov_type = edge_cov;
 unsigned char *trace_bitmap = NULL;
 unsigned int trace_bitmap_size = 0;
 
-static char *udmabuf_name = DEFAULT_UDMABUF_NAME;
 static int trace_id = -1;
 static pid_t child_pid = -1;
 static bool is_first_trace = true;
@@ -654,7 +654,7 @@ int init_trace(pid_t parent_pid, pid_t pid)
     trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
   }
 
-  if (get_udmabuf_info(udmabuf_name, &etr_ram_addr, &etr_ram_size) < 0) {
+  if (get_udmabuf_info(udmabuf_num, &etr_ram_addr, &etr_ram_size) < 0) {
     fprintf(stderr, "Failed to get u-dma-buf info\n");
     goto exit;
   }

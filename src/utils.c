@@ -450,8 +450,7 @@ struct addr_range *append_mmap_exec_region(pid_t pid,
   return r;
 }
 
-int get_udmabuf_info(const char *udmabuf_name,
-    unsigned long *phys_addr, size_t *size)
+int get_udmabuf_info(int udmabuf_num, unsigned long *phys_addr, size_t *size)
 {
   const char *udmabuf_root = "/sys/class/u-dma-buf";
 
@@ -465,17 +464,17 @@ int get_udmabuf_info(const char *udmabuf_name,
   ret = -1;
 
   memset(udmabuf_path, '\0', sizeof(udmabuf_path));
-  snprintf(udmabuf_path, sizeof(udmabuf_path), "%s/%s",
-      udmabuf_root, udmabuf_name);
+  snprintf(udmabuf_path, sizeof(udmabuf_path), "%s/udmabuf%d",
+      udmabuf_root, udmabuf_num);
   if (stat(udmabuf_path, &sb) != 0 || (!S_ISDIR(sb.st_mode))) {
-    fprintf(stderr, "u-dma-buf device '%s' not found\n",
-        udmabuf_name);
+    fprintf(stderr, "u-dma-buf device 'udmabuf%d' not found\n",
+        udmabuf_num);
     return ret;
   }
 
   memset(tmp_path, '\0', sizeof(tmp_path));
-  snprintf(tmp_path, sizeof(tmp_path), "%s/%s/phys_addr",
-      udmabuf_root, udmabuf_name);
+  snprintf(tmp_path, sizeof(tmp_path), "%s/udmabuf%d/phys_addr",
+      udmabuf_root, udmabuf_num);
   if ((fd = open(tmp_path, O_RDONLY)) < 0) {
     perror("open");
     return -1;
@@ -491,8 +490,8 @@ int get_udmabuf_info(const char *udmabuf_name,
   close(fd);
 
   memset(tmp_path, '\0', sizeof(tmp_path));
-  snprintf(tmp_path, sizeof(tmp_path), "%s/%s/size",
-      udmabuf_root, udmabuf_name);
+  snprintf(tmp_path, sizeof(tmp_path), "%s/udmabuf%d/size",
+      udmabuf_root, udmabuf_num);
   if ((fd = open(tmp_path, O_RDONLY)) < 0) {
     perror("open");
     return -1;

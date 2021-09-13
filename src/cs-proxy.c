@@ -41,6 +41,7 @@ s32 proxy_st_fd = -1;
 u8 first_run = 1;
 
 /* TODO: Remove extern variables. */
+extern int udmabuf_num;
 extern bool decoding_on;
 extern unsigned char *trace_bitmap;
 extern unsigned int trace_bitmap_size;
@@ -175,6 +176,12 @@ static void __afl_start_forkserver(char *argv[]) {
     } else {
       FATAL("Error: unknown coverage type '%s'", ptr);
     }
+
+  }
+
+  if ((ptr = getenv("AFLCS_UDMABUF")) != NULL) {
+
+    udmabuf_num = atoi(ptr);
 
   }
 
