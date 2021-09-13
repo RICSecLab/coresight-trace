@@ -32,6 +32,9 @@
 #include "config.h"
 #include "utils.h"
 
+#define DEFAULT_TRACE_BITMAP_SIZE_POW2 (16)
+#define DEFAULT_TRACE_BITMAP_SIZE (1U << (DEFAULT_TRACE_BITMAP_SIZE_POW2))
+
 extern int registration_verbose;
 
 extern char *board_name;
@@ -41,6 +44,9 @@ extern bool export_config;
 extern int range_count;
 extern struct addr_range range[RANGE_MAX];
 extern cov_type_t cov_type;
+
+extern unsigned char *trace_bitmap;
+extern unsigned int trace_bitmap_size;
 
 void child(char *argv[])
 {
@@ -112,6 +118,7 @@ int main(int argc, char *argv[])
 
   argvp = NULL;
   registration_verbose = 0;
+  trace_bitmap_size = DEFAULT_TRACE_BITMAP_SIZE;
 
   if (argc < 3) {
     usage(argv[0]);

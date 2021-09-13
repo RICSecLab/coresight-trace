@@ -88,7 +88,10 @@ DIR?=trace/$(DATE)
 TRACEE?=tests/fib
 TRACEE_ARGS?=
 
-all: $(CS_PROXY) $(CS_TRACE) $(TESTS)
+all: $(CS_TRACE) $(TESTS)
+ifeq ($(shell test -d $(INC)/afl/; echo $$?),0)
+all: $(CS_PROXY)
+endif
 
 decode: $(CSDEC) trace
 	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)

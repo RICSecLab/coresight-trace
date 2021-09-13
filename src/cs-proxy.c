@@ -42,8 +42,8 @@ u8 first_run = 1;
 
 /* TODO: Remove extern variables. */
 extern bool decoding_on;
-extern unsigned char *afl_area_ptr;
-extern int afl_map_size;
+extern unsigned char *trace_bitmap;
+extern unsigned int trace_bitmap_size;
 extern cov_type_t cov_type;
 
 /* Error reporting to forkserver controller */
@@ -68,19 +68,19 @@ static void __afl_map_shm(void) {
   if ((ptr = getenv("AFL_MAP_SIZE")) != NULL) {
 
     u32 val = atoi(ptr);
-    if (val > 0) afl_map_size = val;
+    if (val > 0) trace_bitmap_size = val;
 
   }
 
 
-  if (afl_map_size > MAP_SIZE) {
+  if (trace_bitmap_size > MAP_SIZE) {
 
-    if (afl_map_size > FS_OPT_MAX_MAPSIZE) {
+    if (trace_bitmap_size > FS_OPT_MAX_MAPSIZE) {
 
       fprintf(stderr,
               "Error: %s *require* to set AFL_MAP_SIZE to %u to "
               "be able to run this instrumented program!\n",
-              __afl_proxy_name, afl_map_size);
+              __afl_proxy_name, trace_bitmap_size);
       if (id_str) {
 
         send_forkserver_error(FS_ERROR_MAP_SIZE);
@@ -93,7 +93,7 @@ static void __afl_map_shm(void) {
       fprintf(stderr,
               "Warning: %s will need to set AFL_MAP_SIZE to %u to "
               "be able to run this instrumented program!\n",
-              __afl_proxy_name, afl_map_size);
+              __afl_proxy_name, trace_bitmap_size);
 
     }
 
@@ -118,7 +118,7 @@ static void __afl_map_shm(void) {
 
     /* map the shared memory segment to the address space of the process */
     shm_base =
-        mmap(0, afl_map_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        mmap(0, trace_bitmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 
     if (shm_base == MAP_FAILED) {
 
@@ -131,15 +131,15 @@ static void __afl_map_shm(void) {
 
     }
 
-    afl_area_ptr = shm_base;
+    trace_bitmap = shm_base;
 #else
     u32 shm_id = atoi(id_str);
 
-    afl_area_ptr = shmat(shm_id, 0, 0);
+    trace_bitmap = shmat(shm_id, 0, 0);
 
 #endif
 
-    if (afl_area_ptr == (void *)-1) {
+    if (trace_bitmap == (void *)-1) {
 
       send_forkserver_error(FS_ERROR_SHMAT);
       exit(1);
@@ -148,7 +148,7 @@ static void __afl_map_shm(void) {
 
     /* Write something into the bitmap so that the parent doesn't give up */
 
-    afl_area_ptr[0] = 1;
+    trace_bitmap[0] = 1;
 
   }
 
@@ -217,8 +217,8 @@ static void __afl_start_forkserver(char *argv[]) {
 
   if (!status) {
 
-    if (afl_map_size <= FS_OPT_MAX_MAPSIZE)
-      status |= (FS_OPT_SET_MAPSIZE(afl_map_size) | FS_OPT_MAPSIZE);
+    if (trace_bitmap_size <= FS_OPT_MAX_MAPSIZE)
+      status |= (FS_OPT_SET_MAPSIZE(trace_bitmap_size) | FS_OPT_MAPSIZE);
     if (status) status |= (FS_OPT_ENABLED);
     memcpy(tmp, &status, 4);
 
@@ -286,7 +286,7 @@ int main(int argc, char *argv[]) {
 
   /* here you specify the map size you need that you are reporting to
      afl-fuzz.  Any value is fine as long as it can be divided by 32. */
-  afl_map_size = MAP_SIZE;  // default is 65536
+  trace_bitmap_size = MAP_SIZE;  // default is 65536
   __afl_proxy_name = argv[0];
 
   for (i = 1; i < argc; i++) {

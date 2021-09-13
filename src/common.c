@@ -27,8 +27,6 @@
 
 #include "libcsdec.h"
 
-#include "afl/common.h"
-
 #include "common.h"
 #include "known-boards.h"
 #include "config.h"
@@ -75,9 +73,8 @@ int range_count = 0;
 struct addr_range range[RANGE_MAX];
 cov_type_t cov_type = edge_cov;
 
-static unsigned char dummy[MAP_SIZE];
-unsigned char *afl_area_ptr = dummy;
-unsigned int afl_map_size = MAP_SIZE;
+unsigned char *trace_bitmap = NULL;
+unsigned int trace_bitmap_size = 0;
 
 static char *udmabuf_name = DEFAULT_UDMABUF_NAME;
 static int trace_id = -1;
@@ -324,18 +321,21 @@ static libcsdec_t init_decoder(void)
 {
   libcsdec_t decoder;
 
-  /* FIXME: Do not use AFL specific variables inside common function */
-  if (!afl_area_ptr || afl_map_size == 0) {
-    decoder = (libcsdec_t)NULL;
-    goto exit;
+  if (!trace_bitmap) {
+    trace_bitmap = malloc(trace_bitmap_size);
+    if (!trace_bitmap) {
+      perror("malloc");
+      decoder = (libcsdec_t)NULL;
+      goto exit;
+    }
   }
 
   switch (cov_type) {
     case edge_cov:
-      decoder = libcsdec_init_edge(afl_area_ptr, afl_map_size);
+      decoder = libcsdec_init_edge(trace_bitmap, trace_bitmap_size);
       break;
     case path_cov:
-      decoder = libcsdec_init_path(afl_area_ptr, afl_map_size);
+      decoder = libcsdec_init_path(trace_bitmap, trace_bitmap_size);
       break;
     default:
       decoder = (libcsdec_t)NULL;
