@@ -97,7 +97,7 @@ static void usage(char *argv0)
   fprintf(stderr, "  -d, --decoding={edge,path}\tenable trace decoding (default: off)\n");
   fprintf(stderr, "  -e, --export\t\t\tenable exporting config (default: %d)\n", export_config);
   fprintf(stderr, "  -u, --udmabuf=INT\t\tspecify u-dma-buf device number to use (default: %d)", udmabuf_num);
-  fprintf(stderr, "  -v, --verbose=[INT]\t\tverbose output level (default: %d)\n", registration_verbose);
+  fprintf(stderr, "  -v, --verbose[=INT]\t\tverbose output level (default: %d)\n", registration_verbose);
   fprintf(stderr, "  -h, --help\t\t\tshow this help\n");
 }
 
