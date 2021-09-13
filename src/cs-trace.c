@@ -145,6 +145,7 @@ int main(int argc, char *argv[])
           fprintf(stderr, "Unknown coverage type '%s'\n", optarg);
           exit(EXIT_FAILURE);
         }
+        decoding_on = true;
         break;
       case 'e':
         export_config = true;
