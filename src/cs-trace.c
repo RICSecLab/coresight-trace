@@ -74,7 +74,7 @@ void parent(pid_t pid, int *child_status)
   while (1) {
     waitpid(pid, &wstatus, 0);
     if (WIFEXITED(wstatus)) {
-      stop_trace();
+      stop_trace(true);
       fini_trace();
       break;
     } else if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == SIGSTOP) {

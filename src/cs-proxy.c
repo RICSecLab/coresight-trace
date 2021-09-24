@@ -326,7 +326,7 @@ int main(int argc, char *argv[]) {
       }
     }
 
-  if (stop_trace() < 0) return -1;
+  if (stop_trace(false) < 0) return -1;
 
     /* report the test case is done and wait for the next */
     if (__afl_end_testcase(status) < 0) return -1;

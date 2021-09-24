@@ -104,7 +104,7 @@ static bool decoder_ready = true;
 extern int registration_verbose;
 
 static int enable_cs_trace(pid_t pid);
-static int disable_cs_trace(void);
+static int disable_cs_trace(bool disable_all);
 
 static void signal_trace_event(trace_event_t event)
 {
@@ -176,7 +176,7 @@ static int trace_sink_polling(void)
 
       /* Wait for suspending trace. */
       wait_trace_event(suspend_event);
-      ret = disable_cs_trace();
+      ret = disable_cs_trace(false);
       if (ret < 0) {
         fprintf(stderr, "disable_cs_trace() failed\n");
         goto exit;
@@ -455,12 +455,18 @@ static int enable_cs_trace(pid_t pid)
       fprintf(stderr, "configure_trace() failed\n");
       goto exit;
     }
+    /* Enable ETMs and trace sinks for the first time */
+    if (enable_trace(board, &devices) < 0) {
+      fprintf(stderr, "enable_trace() failed\n");
+      goto exit;
+    }
     is_first_trace = false;
-  }
-
-  if (enable_trace(board, &devices) < 0) {
-    fprintf(stderr, "enable_trace() failed\n");
-    goto exit;
+  } else {
+    /* Enable trace sinks only once ETMs enabled */
+    if (enable_trace_sinks_only(&devices) < 0) {
+      fprintf(stderr, "enable_trace_sinks_only() failed\n");
+      goto exit;
+    }
   }
 
   if (export_config) {
@@ -478,15 +484,22 @@ exit:
   return ret;
 }
 
-static int disable_cs_trace(void)
+static int disable_cs_trace(bool disable_all)
 {
   int ret;
 
   pthread_mutex_lock(&trace_mutex);
 
-  if ((ret = disable_trace(board, &devices)) < 0) {
-    fprintf(stderr, "disable_trace() failed\n");
-    goto exit;
+  if (disable_all) {
+    if ((ret = disable_trace(board, &devices)) < 0) {
+      fprintf(stderr, "disable_trace() failed\n");
+      goto exit;
+    }
+  } else {
+    if ((ret = disable_trace_sinks_only(&devices)) < 0) {
+      fprintf(stderr, "disable_trace_sinks_only() failed\n");
+      goto exit;
+    }
   }
 
 exit:
@@ -608,15 +621,12 @@ exit:
 }
 
 /* Stop trace session. CoreSight and decoder are still available. */
-int stop_trace(void)
+int stop_trace(bool disable_all)
 {
   int ret;
 
-  if ((ret = disable_cs_trace()) < 0) {
+  if ((ret = disable_cs_trace(disable_all)) < 0) {
     fprintf(stderr, "disable_cs_trace() failed\n");
-  }
-
-  if (ret < 0) {
     goto exit;
   }
 
