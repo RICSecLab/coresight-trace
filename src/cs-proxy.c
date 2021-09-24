@@ -40,6 +40,10 @@ s32 proxy_ctl_fd = -1;
 s32 proxy_st_fd = -1;
 u8 first_run = 1;
 
+#ifdef EXEC_COUNT
+u32 exec_count = 0;
+#endif
+
 /* TODO: Remove extern variables. */
 extern int udmabuf_num;
 extern bool decoding_on;
@@ -327,6 +331,9 @@ int main(int argc, char *argv[]) {
     /* report the test case is done and wait for the next */
     if (__afl_end_testcase(status) < 0) return -1;
 
+#ifdef EXEC_COUNT
+    if (++exec_count > EXEC_COUNT) return 0;
+#endif
   }
 
   return 0;

@@ -52,6 +52,11 @@ CFLAGS:= \
   -lpthread \
   -lcapstone \
 
+ifneq ($(strip $(PERF)),)
+  EXEC_COUNT?=1000
+  CFLAGS+=-pg -DEXEC_COUNT=$(EXEC_COUNT)
+endif
+
 ifneq ($(strip $(DEBUG)),)
   CFLAGS+=-g -O0
 else
