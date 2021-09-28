@@ -96,12 +96,12 @@ endif
 decode: $(CSDEC) trace
 	$(realpath $(CSDEC)) $(shell cat $(DIR)/decoderargs.txt)
 
-trace: $(CS_TRACE) $(TESTS)
+trace: $(CS_TRACE) $(TESTS) | $(UDMABUF_BUF_PATH)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
 	sudo $(realpath $(CS_TRACE)) $(CS_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
-debug: $(CS_TRACE) $(TESTS)
+debug: $(CS_TRACE) $(TESTS) | $(UDMABUF_BUF_PATH)
 	mkdir -p $(DIR) && \
 	cd $(DIR) && \
 	sudo gdb --args $(realpath $(CS_TRACE)) $(CS_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
@@ -126,7 +126,7 @@ $(LIBCSACCUTIL): libcsal
 $(UDMABUF_KMOD):
 	$(MAKE) -C $(UDMABUF_BASE)
 
-$(UDMABUF_BUF_PATH): $(UDMABUF_KMOD)
+$(UDMABUF_BUF_PATH): | $(UDMABUF_KMOD)
 	sudo insmod $^ $(notdir $@)=$(UDMABUF_BUF_SIZE)
 
 clean:
