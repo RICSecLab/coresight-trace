@@ -140,6 +140,5 @@ clean:
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
 	$(MAKE) -C $(CSDEC_BASE) clean
-	$(MAKE) -C $(UDMABUF_BASE) clean
 
 .PHONY: all trace debug decode libcsal clean dist-clean
