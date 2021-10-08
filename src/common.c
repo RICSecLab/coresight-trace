@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <time.h>
 
 #include <sys/ptrace.h>
@@ -172,6 +173,10 @@ static int trace_sink_polling(void)
       /* Suspend child_pid process. */
       ret = kill(child_pid, SIGSTOP);
       if (ret < 0) {
+        if (errno == ESRCH) {
+          /* child_pid killed. */
+          goto killed;
+        }
         perror("kill");
         goto exit;
       }
@@ -189,6 +194,10 @@ static int trace_sink_polling(void)
       /* Continue child_pid process. */
       ret = kill(child_pid, SIGCONT);
       if (ret < 0) {
+        if (errno == ESRCH) {
+          /* child_pid killed. */
+          goto killed;
+        }
         perror("kill");
         goto exit;
       }
@@ -201,6 +210,7 @@ static int trace_sink_polling(void)
     }
   }
 
+killed:
   pthread_mutex_lock(&trace_event_mutex);
   while (trace_event != stop_event && trace_event != fini_event) {
     pthread_cond_wait(&trace_event_cond, &trace_event_mutex);
