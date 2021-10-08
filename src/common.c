@@ -85,10 +85,8 @@ static void *trace_buf = NULL;
 static size_t trace_buf_size = 0;
 static void *trace_buf_ptr = NULL;
 static void *decoded_trace_buf = NULL;
-static sigset_t sig_set;
 
 static pthread_t decoder_thread;
-static pthread_t signal_handler_thread;
 
 static pthread_mutex_t trace_mutex;
 static pthread_mutex_t trace_state_mutex;
@@ -238,27 +236,6 @@ static void *decoder_worker(void *arg)
       trace_sink_polling();
     } else if (event == fini_event) {
       break;
-    }
-  }
-
-  return NULL;
-}
-
-static void *signal_handler(void *arg)
-{
-  int signal;
-
-  /* TODO: Set CPU affinity of this thread */
-
-  while (1) {
-    /* Wait SIGTERM */
-    sigwait(&sig_set, &signal);
-
-    if (signal == SIGTERM) {
-      /* Wait trace_stop */
-      wait_trace_event(stop_event);
-      fini_trace();
-      exit(0);
     }
   }
 
@@ -680,15 +657,6 @@ int init_trace(pid_t parent_pid, pid_t pid)
   }
 
   if ((trace_id = get_trace_id(board_name, trace_cpu)) < 0) {
-    goto exit;
-  }
-
-  sigemptyset(&sig_set);
-  sigaddset(&sig_set, SIGTERM);
-  pthread_sigmask(SIG_BLOCK, &sig_set, NULL);
-  ret = pthread_create(&signal_handler_thread, NULL, signal_handler, NULL);
-  if (ret != 0) {
-    fprintf(stderr, "pthread_create() failed: %d\n", ret);
     goto exit;
   }
 
