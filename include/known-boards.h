@@ -9,9 +9,11 @@
 #error "DEFAULT_BOARD_NAME must be specified"
 #endif
 
+#include "csregisters.h"
 #include "csregistration.h"
 
 #include <stdbool.h>
+#include <string.h>
 
 #define AXICTL_COMMON (CS_ETB_AXICTL_PROT_CTL_B1 | CS_ETB_AXICTL_AXCACHE_OS)
 
