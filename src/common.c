@@ -35,6 +35,7 @@
 #include "utils.h"
 
 #define DEFAULT_TRACE_CPU 0
+#define DEFAULT_DECODER_CPU -1
 #define DEFAULT_UDMABUF_NUM 0
 #define DEFAULT_ETF_SIZE 0x1000
 #define DEFAULT_TRACE_SIZE 0x80000
@@ -235,8 +236,6 @@ exit:
 static void *decoder_worker(void *arg)
 {
   trace_event_t event;
-
-  /* TODO: Set CPU affinity of this thread */
 
   while (1) {
     pthread_mutex_lock(&trace_event_mutex);
@@ -645,6 +644,7 @@ int init_trace(pid_t parent_pid, pid_t pid)
 {
   int ret;
   int preferred_cpu;
+  int decoder_cpu;
 
   ret = -1;
 
@@ -657,7 +657,10 @@ int init_trace(pid_t parent_pid, pid_t pid)
   pthread_cond_init(&trace_decoder_cond, NULL);
 
   if (trace_cpu < 0) {
-    preferred_cpu = get_preferred_cpu(parent_pid);
+    if ((preferred_cpu = get_preferred_cpu(parent_pid)) < 0) {
+      /* Some boards is not supported by get_preferred_cpu() */
+      preferred_cpu = find_free_cpu();
+    }
     trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
   }
 
@@ -690,6 +693,19 @@ int init_trace(pid_t parent_pid, pid_t pid)
     if (ret != 0) {
       fprintf(stderr, "pthread_create() failed: %d\n", ret);
       goto exit;
+    }
+
+    /* Using find_free_cpu() for decoder thread decreases performance on
+     * Marvell ThunderX2. The tracee process and the decoder thread should be
+     * in the same CPU core group. DEFAULT_DECODER_CPU fallback is -1.
+     */
+    if ((decoder_cpu = get_preferred_cpu(pid)) < 0) {
+      decoder_cpu = DEFAULT_DECODER_CPU;
+    }
+    if (decoder_cpu >= 0) {
+      if (set_pthread_cpu_affinity(decoder_cpu, decoder_thread) < 0) {
+        fprintf(stderr, "set_pthread_cpu_affinity() failed");
+      }
     }
   }
 

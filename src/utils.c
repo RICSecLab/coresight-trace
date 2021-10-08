@@ -223,6 +223,7 @@ static cpu_set_t *alloc_cpu_set(cpu_set_t **cpu_set, size_t *setsize)
 }
 
 /* Set given cpu_set bits represent related CPU cores with cpu */
+/* NOTE: This is not supported by the Jetson family. */
 static int set_core_cpus(int cpu, cpu_set_t *cpu_set, size_t setsize)
 {
   int ret;
@@ -279,7 +280,8 @@ exit:
   return ret;
 }
 
-/* Find CPU core not in the same group of CPU binded to the PID process. */
+/* Find CPU core in the same group of CPU binded to the PID process. */
+/* NOTE: This is not supported by the Jetson family. */
 int get_preferred_cpu(pid_t pid)
 {
   int ret;
