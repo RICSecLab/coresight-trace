@@ -15,6 +15,7 @@
 #include <sched.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #include <sys/mman.h>
 #include <sys/ptrace.h>
@@ -346,6 +347,33 @@ int set_cpu_affinity(int cpu, pid_t pid)
   CPU_SET_S(cpu, setsize,  cpu_set);
   if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
     perror("sched_setaffinity");
+    goto exit;
+  }
+
+  ret = 0;
+
+exit:
+  if (cpu_set) {
+    CPU_FREE(cpu_set);
+  }
+
+  return ret;
+}
+
+int set_pthread_cpu_affinity(int cpu, pthread_t thread)
+{
+  int ret;
+  cpu_set_t *cpu_set;
+  size_t setsize;
+
+  ret = -1;
+
+  if (!alloc_cpu_set(&cpu_set, &setsize)) {
+    goto exit;
+  }
+  CPU_SET_S(cpu, setsize, cpu_set);
+  if (pthread_setaffinity_np(thread, setsize, cpu_set) < 0) {
+    perror("pthread_setaffinity_np");
     goto exit;
   }
 
