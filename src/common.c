@@ -153,12 +153,11 @@ static void set_trace_state(trace_state_t new_state)
   pthread_mutex_unlock(&trace_state_mutex);
 }
 
-static int trace_sink_polling(void)
+static int trace_sink_polling(unsigned long decoding_threshold)
 {
   int ret;
   unsigned long init_pos;
   unsigned long curr_offset;
-  unsigned long decoding_threshold = 0x200;
 
   pthread_mutex_lock(&trace_decoder_mutex);
   decoder_ready = false;
@@ -236,6 +235,22 @@ exit:
 static void *decoder_worker(void *arg)
 {
   trace_event_t event;
+  size_t etf_ram_size;
+  unsigned long decoding_threshold;
+
+  if (etr_ram_size == 0) {
+    etr_ram_size = cs_get_buffer_size_bytes(devices.etb);
+  }
+  if (devices.trace_sinks[0]) {
+    etf_ram_size = (size_t)cs_get_buffer_size_bytes(devices.trace_sinks[0]);
+    if (etf_ram_size < etr_ram_size) {
+      decoding_threshold = etf_ram_size * 2;
+    } else {
+      decoding_threshold = etr_ram_size;
+    }
+  } else {
+    decoding_threshold = etr_ram_size;
+  }
 
   while (1) {
     pthread_mutex_lock(&trace_event_mutex);
@@ -246,7 +261,7 @@ static void *decoder_worker(void *arg)
     event = trace_event; /* TODO: trace_event can be changed in if cond. */
     pthread_mutex_unlock(&trace_event_mutex);
     if (event == start_event) {
-      trace_sink_polling();
+      trace_sink_polling(decoding_threshold);
     } else if (event == fini_event) {
       break;
     }
