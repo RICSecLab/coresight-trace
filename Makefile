@@ -52,6 +52,11 @@ CFLAGS:= \
   -lpthread \
   -lcapstone \
 
+ifneq ($(strip $(PERF)),)
+  EXEC_COUNT?=1000
+  CFLAGS+=-pg -DEXEC_COUNT=$(EXEC_COUNT)
+endif
+
 ifneq ($(strip $(DEBUG)),)
   CFLAGS+=-g -O0
 else
@@ -135,6 +140,5 @@ clean:
 dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
 	$(MAKE) -C $(CSDEC_BASE) clean
-	$(MAKE) -C $(UDMABUF_BASE) clean
 
 .PHONY: all trace debug decode libcsal clean dist-clean

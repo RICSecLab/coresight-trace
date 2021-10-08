@@ -14,7 +14,10 @@
 #include <limits.h>
 #include <sched.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <fcntl.h>
+#include <ctype.h>
+#include <pthread.h>
 
 #include <sys/mman.h>
 #include <sys/ptrace.h>
@@ -27,6 +30,9 @@
 
 #include <asm/ptrace.h>
 #include <asm/unistd.h>
+
+#define MAX_LINE 8192
+#define MAX_CPUS 4096
 
 void dump_buf(void *buf, size_t buf_size, const char *buf_path)
 {
@@ -217,6 +223,7 @@ static cpu_set_t *alloc_cpu_set(cpu_set_t **cpu_set, size_t *setsize)
 }
 
 /* Set given cpu_set bits represent related CPU cores with cpu */
+/* NOTE: This is not supported by the Jetson family. */
 static int set_core_cpus(int cpu, cpu_set_t *cpu_set, size_t setsize)
 {
   int ret;
@@ -273,7 +280,8 @@ exit:
   return ret;
 }
 
-/* Find CPU core not in the same group of CPU binded to the PID process. */
+/* Find CPU core in the same group of CPU binded to the PID process. */
+/* NOTE: This is not supported by the Jetson family. */
 int get_preferred_cpu(pid_t pid)
 {
   int ret;
@@ -332,6 +340,90 @@ exit:
   return ret;
 }
 
+/* ref: https://github.com/AFLplusplus/AFLplusplus/blob/stable/src/afl-fuzz-init.c */
+/* Finds a free CPU core by reading procfs. */
+int find_free_cpu(void)
+{
+  int nprocs;
+  DIR *proc_dir;
+  struct dirent *proc_entry;
+  char task_path[PATH_MAX];
+  DIR *task_dir;
+  struct dirent *task_entry;
+  char status_path[PATH_MAX];
+  FILE *status_fp;
+  char tmp[MAX_LINE];
+  bool has_vmsize;
+  unsigned int hval;
+  bool cpu_used[MAX_CPUS];
+  int i;
+
+  nprocs = sysconf(_SC_NPROCESSORS_ONLN);
+  if (nprocs < 2) {
+    return 0;
+  }
+
+  memset(cpu_used, (int)false, sizeof(cpu_used));
+
+  if (!(proc_dir = opendir("/proc"))) {
+    perror("opendir");
+    return -1;
+  }
+
+  while ((proc_entry = readdir(proc_dir))) {
+    if (!isdigit(proc_entry->d_name[0])) {
+      continue;
+    }
+
+    memset(task_path, 0, PATH_MAX);
+    snprintf(task_path, PATH_MAX, "/proc/%s/task", proc_entry->d_name);
+    if (!(task_dir = opendir((const char *)task_path))) {
+      perror("opendir");
+      continue;
+    }
+
+    while ((task_entry = readdir(task_dir))) {
+      if (!isdigit(task_entry->d_name[0])) {
+        continue;
+      }
+
+      memset(status_path, 0, PATH_MAX);
+      snprintf(status_path, PATH_MAX, "/proc/%s/task/%s/status",
+          proc_entry->d_name, task_entry->d_name);
+      if (!(status_fp = fopen(status_path, "r"))) {
+        continue;
+      }
+
+      has_vmsize = false;
+      while (fgets(tmp, MAX_LINE, status_fp)) {
+        hval = 0;
+        if (!strncmp(tmp, "VmSize:\t", 8)) {
+          has_vmsize = true;
+        }
+        if (!strncmp(tmp, "Cpus_allowed_list:\t", 19) && !strchr(tmp, '-') &&
+            !strchr(tmp, ',') && sscanf(tmp + 19, "%u", &hval) == 1 &&
+            hval < MAX_CPUS && has_vmsize) {
+          cpu_used[hval] = true;
+          break;
+        }
+      }
+      fclose(status_fp);
+    }
+    closedir(task_dir);
+  }
+  closedir(proc_dir);
+
+  for (i = 0; i < nprocs; i++) {
+    if (!cpu_used[i]) {
+      /* Free CPU found. */
+      return i;
+    }
+  }
+
+  /* Free CPU not found. */
+  return -1;
+}
+
 int set_cpu_affinity(int cpu, pid_t pid)
 {
   int ret;
@@ -346,6 +438,33 @@ int set_cpu_affinity(int cpu, pid_t pid)
   CPU_SET_S(cpu, setsize,  cpu_set);
   if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
     perror("sched_setaffinity");
+    goto exit;
+  }
+
+  ret = 0;
+
+exit:
+  if (cpu_set) {
+    CPU_FREE(cpu_set);
+  }
+
+  return ret;
+}
+
+int set_pthread_cpu_affinity(int cpu, pthread_t thread)
+{
+  int ret;
+  cpu_set_t *cpu_set;
+  size_t setsize;
+
+  ret = -1;
+
+  if (!alloc_cpu_set(&cpu_set, &setsize)) {
+    goto exit;
+  }
+  CPU_SET_S(cpu, setsize, cpu_set);
+  if (pthread_setaffinity_np(thread, setsize, cpu_set) < 0) {
+    perror("pthread_setaffinity_np");
     goto exit;
   }
 

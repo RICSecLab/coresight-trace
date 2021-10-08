@@ -324,24 +324,14 @@ int disable_trace(const struct board *board, struct cs_devices_t *devices)
   return 0;
 }
 
-int enable_trace_sinks(const struct board *board, struct cs_devices_t *devices)
+int enable_trace_sinks_only(struct cs_devices_t *devices)
 {
-#if 0
-  int i, error_count;
-#else
   int error_count;
-#endif
 
-  if (!board || !devices) {
+  if (!devices) {
     return -1;
   }
 
-#if 0
-  if (cs_sink_etr_setup(devices->etb, etr_ram_addr, etr_ram_size) != 0) {
-    fprintf(stderr, "Failed to setup ETR\n");
-    return -1;
-  }
-#endif
   if (cs_sink_enable(devices->etb) != 0) {
     fprintf(stderr, "Failed to enable ETR\n");
     return -1;
@@ -359,19 +349,7 @@ int enable_trace_sinks(const struct board *board, struct cs_devices_t *devices)
     }
   }
 
-#if 0
-  for (i = 0; i < board->n_cpu; ++i) {
-    cs_trace_enable(devices->ptm[i]);
-  }
-#endif
-
   cs_checkpoint();
-
-#if 0
-  if (registration_verbose > 0) {
-    cs_cti_diag();
-  }
-#endif
 
   error_count = cs_error_count();
   if (error_count > 0) {
@@ -382,37 +360,20 @@ int enable_trace_sinks(const struct board *board, struct cs_devices_t *devices)
   return 0;
 }
 
-int disable_trace_sinks(const struct board *board, struct cs_devices_t *devices)
+int disable_trace_sinks_only(struct cs_devices_t *devices)
 {
-#if 0
-  int i, error_count;
-#else
   int error_count;
-#endif
 
-  if (!board || !devices) {
+  if (!devices) {
     return -1;
   }
 
   cs_etb_flush_and_wait_stop(devices);
 
-#if 0
-  for (i = 0; i < board->n_cpu; ++i) {
-    cs_trace_disable(devices->ptm[i]);
-  }
-#endif
   if (devices->trace_sinks[0]) {
     cs_sink_disable(devices->trace_sinks[0]);
   }
   cs_sink_disable(devices->etb);
-
-#if 0
-  if (registration_verbose > 1) {
-    for (i = 0; i < board->n_cpu; ++i) {
-      show_etm_config(devices->ptm[i]);
-    }
-  }
-#endif
 
   error_count = cs_error_count();
   if (error_count > 0) {

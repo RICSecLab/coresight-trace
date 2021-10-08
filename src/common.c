@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <time.h>
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
@@ -33,11 +35,15 @@
 #include "utils.h"
 
 #define DEFAULT_TRACE_CPU 0
+#define DEFAULT_DECODER_CPU -1
 #define DEFAULT_UDMABUF_NUM 0
 #define DEFAULT_ETF_SIZE 0x1000
 #define DEFAULT_TRACE_SIZE 0x80000
 #define DEFAULT_TRACE_NAME "cstrace.bin"
 #define DEFAULT_TRACE_ARGS_NAME "decoderargs.txt"
+
+#define TRACE_DISABLE_TRIAL 8
+#define TRACE_DISABLE_TRIAL_USLEEP 10
 
 #define CSDBG() do { \
     fprintf(stderr, "%s:%d\n", __func__, __LINE__); \
@@ -85,10 +91,8 @@ static void *trace_buf = NULL;
 static size_t trace_buf_size = 0;
 static void *trace_buf_ptr = NULL;
 static void *decoded_trace_buf = NULL;
-static sigset_t sig_set;
 
 static pthread_t decoder_thread;
-static pthread_t signal_handler_thread;
 
 static pthread_mutex_t trace_mutex;
 static pthread_mutex_t trace_state_mutex;
@@ -104,7 +108,7 @@ static bool decoder_ready = true;
 extern int registration_verbose;
 
 static int enable_cs_trace(pid_t pid);
-static int disable_cs_trace(void);
+static int disable_cs_trace(bool disable_all);
 
 static void signal_trace_event(trace_event_t event)
 {
@@ -149,12 +153,11 @@ static void set_trace_state(trace_state_t new_state)
   pthread_mutex_unlock(&trace_state_mutex);
 }
 
-static int trace_sink_polling(void)
+static int trace_sink_polling(unsigned long decoding_threshold)
 {
   int ret;
   unsigned long init_pos;
   unsigned long curr_offset;
-  unsigned long decoding_threshold = 0x200;
 
   pthread_mutex_lock(&trace_decoder_mutex);
   decoder_ready = false;
@@ -170,14 +173,18 @@ static int trace_sink_polling(void)
       /* Suspend child_pid process. */
       ret = kill(child_pid, SIGSTOP);
       if (ret < 0) {
+        if (errno == ESRCH) {
+          /* child_pid killed. */
+          goto killed;
+        }
         perror("kill");
         goto exit;
       }
 
       /* Wait for suspending trace. */
       wait_trace_event(suspend_event);
-      ret = disable_cs_trace();
-      if (ret < 0) {
+
+      if ((ret = disable_cs_trace(false)) < 0) {
         fprintf(stderr, "disable_cs_trace() failed\n");
         goto exit;
       }
@@ -187,6 +194,10 @@ static int trace_sink_polling(void)
       /* Continue child_pid process. */
       ret = kill(child_pid, SIGCONT);
       if (ret < 0) {
+        if (errno == ESRCH) {
+          /* child_pid killed. */
+          goto killed;
+        }
         perror("kill");
         goto exit;
       }
@@ -199,6 +210,7 @@ static int trace_sink_polling(void)
     }
   }
 
+killed:
   pthread_mutex_lock(&trace_event_mutex);
   while (trace_event != stop_event && trace_event != fini_event) {
     pthread_cond_wait(&trace_event_cond, &trace_event_mutex);
@@ -223,8 +235,22 @@ exit:
 static void *decoder_worker(void *arg)
 {
   trace_event_t event;
+  size_t etf_ram_size;
+  unsigned long decoding_threshold;
 
-  /* TODO: Set CPU affinity of this thread */
+  if (etr_ram_size == 0) {
+    etr_ram_size = cs_get_buffer_size_bytes(devices.etb);
+  }
+  if (devices.trace_sinks[0]) {
+    etf_ram_size = (size_t)cs_get_buffer_size_bytes(devices.trace_sinks[0]);
+    if (etf_ram_size < etr_ram_size) {
+      decoding_threshold = etf_ram_size * 2;
+    } else {
+      decoding_threshold = etr_ram_size;
+    }
+  } else {
+    decoding_threshold = etr_ram_size;
+  }
 
   while (1) {
     pthread_mutex_lock(&trace_event_mutex);
@@ -235,30 +261,9 @@ static void *decoder_worker(void *arg)
     event = trace_event; /* TODO: trace_event can be changed in if cond. */
     pthread_mutex_unlock(&trace_event_mutex);
     if (event == start_event) {
-      trace_sink_polling();
+      trace_sink_polling(decoding_threshold);
     } else if (event == fini_event) {
       break;
-    }
-  }
-
-  return NULL;
-}
-
-static void *signal_handler(void *arg)
-{
-  int signal;
-
-  /* TODO: Set CPU affinity of this thread */
-
-  while (1) {
-    /* Wait SIGTERM */
-    sigwait(&sig_set, &signal);
-
-    if (signal == SIGTERM) {
-      /* Wait trace_stop */
-      wait_trace_event(stop_event);
-      fini_trace();
-      exit(0);
     }
   }
 
@@ -455,12 +460,18 @@ static int enable_cs_trace(pid_t pid)
       fprintf(stderr, "configure_trace() failed\n");
       goto exit;
     }
+    /* Enable ETMs and trace sinks for the first time */
+    if (enable_trace(board, &devices) < 0) {
+      fprintf(stderr, "enable_trace() failed\n");
+      goto exit;
+    }
     is_first_trace = false;
-  }
-
-  if (enable_trace(board, &devices) < 0) {
-    fprintf(stderr, "enable_trace() failed\n");
-    goto exit;
+  } else {
+    /* Enable trace sinks only once ETMs enabled */
+    if (enable_trace_sinks_only(&devices) < 0) {
+      fprintf(stderr, "enable_trace_sinks_only() failed\n");
+      goto exit;
+    }
   }
 
   if (export_config) {
@@ -478,18 +489,31 @@ exit:
   return ret;
 }
 
-static int disable_cs_trace(void)
+static int disable_cs_trace(bool disable_all)
 {
   int ret;
+  int disable_trial;
 
   pthread_mutex_lock(&trace_mutex);
 
-  if ((ret = disable_trace(board, &devices)) < 0) {
-    fprintf(stderr, "disable_trace() failed\n");
-    goto exit;
+  disable_trial = 0;
+  while (disable_trial++ < TRACE_DISABLE_TRIAL) {
+    if (disable_all) {
+      if ((ret = disable_trace(board, &devices)) < 0) {
+        fprintf(stderr, "disable_trace() failed\n");
+      }
+    } else {
+      if ((ret = disable_trace_sinks_only(&devices)) < 0) {
+        fprintf(stderr, "disable_trace_sinks_only() failed\n");
+      }
+    }
+    if (!(ret < 0)) {
+      break;
+    }
+    usleep(TRACE_DISABLE_TRIAL_USLEEP);
+    cs_reset_error_count();
   }
 
-exit:
   pthread_mutex_unlock(&trace_mutex);
 
   return ret;
@@ -608,15 +632,12 @@ exit:
 }
 
 /* Stop trace session. CoreSight and decoder are still available. */
-int stop_trace(void)
+int stop_trace(bool disable_all)
 {
   int ret;
 
-  if ((ret = disable_cs_trace()) < 0) {
+  if ((ret = disable_cs_trace(disable_all)) < 0) {
     fprintf(stderr, "disable_cs_trace() failed\n");
-  }
-
-  if (ret < 0) {
     goto exit;
   }
 
@@ -638,6 +659,7 @@ int init_trace(pid_t parent_pid, pid_t pid)
 {
   int ret;
   int preferred_cpu;
+  int decoder_cpu;
 
   ret = -1;
 
@@ -650,7 +672,10 @@ int init_trace(pid_t parent_pid, pid_t pid)
   pthread_cond_init(&trace_decoder_cond, NULL);
 
   if (trace_cpu < 0) {
-    preferred_cpu = get_preferred_cpu(parent_pid);
+    if ((preferred_cpu = get_preferred_cpu(parent_pid)) < 0) {
+      /* Some boards is not supported by get_preferred_cpu() */
+      preferred_cpu = find_free_cpu();
+    }
     trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
   }
 
@@ -673,15 +698,6 @@ int init_trace(pid_t parent_pid, pid_t pid)
     goto exit;
   }
 
-  sigemptyset(&sig_set);
-  sigaddset(&sig_set, SIGTERM);
-  pthread_sigmask(SIG_BLOCK, &sig_set, NULL);
-  ret = pthread_create(&signal_handler_thread, NULL, signal_handler, NULL);
-  if (ret != 0) {
-    fprintf(stderr, "pthread_create() failed: %d\n", ret);
-    goto exit;
-  }
-
   if (decoding_on) {
     decoder = init_decoder();
     if (!decoder) {
@@ -692,6 +708,19 @@ int init_trace(pid_t parent_pid, pid_t pid)
     if (ret != 0) {
       fprintf(stderr, "pthread_create() failed: %d\n", ret);
       goto exit;
+    }
+
+    /* Using find_free_cpu() for decoder thread decreases performance on
+     * Marvell ThunderX2. The tracee process and the decoder thread should be
+     * in the same CPU core group. DEFAULT_DECODER_CPU fallback is -1.
+     */
+    if ((decoder_cpu = get_preferred_cpu(pid)) < 0) {
+      decoder_cpu = DEFAULT_DECODER_CPU;
+    }
+    if (decoder_cpu >= 0) {
+      if (set_pthread_cpu_affinity(decoder_cpu, decoder_thread) < 0) {
+        fprintf(stderr, "set_pthread_cpu_affinity() failed");
+      }
     }
   }
 

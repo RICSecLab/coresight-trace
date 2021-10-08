@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 #include <sys/types.h>
 
@@ -38,7 +39,9 @@ int setup_mem_range(pid_t pid, struct addr_range *range, int count_max);
 int export_decoder_args(int trace_id, const char *trace_path,
     const char *args_path, struct addr_range *range, int count);
 int get_preferred_cpu(pid_t pid);
+int find_free_cpu(void);
 int set_cpu_affinity(int cpu, pid_t pid);
+int set_pthread_cpu_affinity(int cpu, pthread_t thread);
 void read_pid_fd_path(pid_t pid, int fd, char *buf, size_t size);
 int get_mmap_params(pid_t pid, struct mmap_params *params);
 bool is_syscall_exit_group(pid_t pid);

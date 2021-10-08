@@ -17,7 +17,7 @@ int decode_trace(void);
 int init_trace(pid_t parent_pid, pid_t pid);
 void fini_trace(void);
 int start_trace(pid_t pid, bool use_pid_trace);
-int stop_trace();
+int stop_trace(bool disable_all);
 void trace_suspend_resume_callback(void);
 
 #endif /* CS_TRACE_COMMON_H */

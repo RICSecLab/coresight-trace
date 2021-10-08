@@ -18,7 +18,7 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
     struct addr_range *range, int range_count, pid_t pid);
 int enable_trace(const struct board *board, struct cs_devices_t *devices);
 int disable_trace(const struct board *board, struct cs_devices_t *devices);
-int enable_trace_sinks(const struct board *board, struct cs_devices_t *devices);
-int disable_trace_sinks(const struct board *board, struct cs_devices_t *devices);
+int enable_trace_sinks_only(struct cs_devices_t *devices);
+int disable_trace_sinks_only(struct cs_devices_t *devices);
 
 #endif /* CS_TRACE_CONFIG_H */
