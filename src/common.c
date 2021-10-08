@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <time.h>
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
@@ -38,6 +39,9 @@
 #define DEFAULT_TRACE_SIZE 0x80000
 #define DEFAULT_TRACE_NAME "cstrace.bin"
 #define DEFAULT_TRACE_ARGS_NAME "decoderargs.txt"
+
+#define TRACE_DISABLE_TRIAL 8
+#define TRACE_DISABLE_TRIAL_USLEEP 10
 
 #define CSDBG() do { \
     fprintf(stderr, "%s:%d\n", __func__, __LINE__); \
@@ -174,8 +178,8 @@ static int trace_sink_polling(void)
 
       /* Wait for suspending trace. */
       wait_trace_event(suspend_event);
-      ret = disable_cs_trace(false);
-      if (ret < 0) {
+
+      if ((ret = disable_cs_trace(false)) < 0) {
         fprintf(stderr, "disable_cs_trace() failed\n");
         goto exit;
       }
@@ -464,22 +468,28 @@ exit:
 static int disable_cs_trace(bool disable_all)
 {
   int ret;
+  int disable_trial;
 
   pthread_mutex_lock(&trace_mutex);
 
-  if (disable_all) {
-    if ((ret = disable_trace(board, &devices)) < 0) {
-      fprintf(stderr, "disable_trace() failed\n");
-      goto exit;
+  disable_trial = 0;
+  while (disable_trial++ < TRACE_DISABLE_TRIAL) {
+    if (disable_all) {
+      if ((ret = disable_trace(board, &devices)) < 0) {
+        fprintf(stderr, "disable_trace() failed\n");
+      }
+    } else {
+      if ((ret = disable_trace_sinks_only(&devices)) < 0) {
+        fprintf(stderr, "disable_trace_sinks_only() failed\n");
+      }
     }
-  } else {
-    if ((ret = disable_trace_sinks_only(&devices)) < 0) {
-      fprintf(stderr, "disable_trace_sinks_only() failed\n");
-      goto exit;
+    if (!(ret < 0)) {
+      break;
     }
+    usleep(TRACE_DISABLE_TRIAL_USLEEP);
+    cs_reset_error_count();
   }
 
-exit:
   pthread_mutex_unlock(&trace_mutex);
 
   return ret;
