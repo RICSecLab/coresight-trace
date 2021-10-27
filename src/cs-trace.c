@@ -42,8 +42,6 @@ extern int udmabuf_num;
 extern bool decoding_on;
 extern int trace_cpu;
 extern bool export_config;
-extern int range_count;
-extern struct addr_range range[RANGE_MAX];
 extern cov_type_t cov_type;
 
 extern unsigned char *trace_bitmap;

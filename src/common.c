@@ -77,7 +77,9 @@ bool export_config = false;
 unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
 int range_count = 0;
-struct addr_range range[RANGE_MAX];
+struct map_info map_info[RANGE_MAX];
+struct libcsdec_memory_map *mem_map = NULL;
+struct libcsdec_memory_image *mem_img = NULL;
 cov_type_t cov_type = edge_cov;
 
 unsigned char *trace_bitmap = NULL;
@@ -271,24 +273,36 @@ static void *decoder_worker(void *arg)
 }
 
 /* TODO: Take cov_type as a argument. */
-static int reset_decoder(void)
+static int reset_decoder(struct map_info *map_info, int map_info_num)
 {
   libcsdec_result_t ret;
+  int i;
 
   if (!decoder) {
     return -1;
+  }
+
+  if (!mem_map) {
+    mem_map = malloc(sizeof(struct libcsdec_memory_map) * map_info_num);
+    if (!mem_map) {
+      perror("malloc");
+      return -1;
+    }
+    for (i = 0; i < map_info_num; i++) {
+      mem_map[i].start = map_info[i].start;
+      mem_map[i].end = map_info[i].end;
+      strncpy(mem_map[i].path, map_info[i].path, sizeof(map_info[i].path) - 1);
+    }
   }
 
   ret = LIBCSDEC_ERROR;
 
   switch (cov_type) {
     case edge_cov:
-      ret = libcsdec_reset_edge(decoder, trace_id, range_count,
-          (struct libcsdec_memory_map *)range);
+      ret = libcsdec_reset_edge(decoder, trace_id, map_info_num, mem_map);
       break;
     case path_cov:
-      ret = libcsdec_reset_path(decoder, trace_id, range_count,
-          (struct libcsdec_memory_map *)range);
+      ret = libcsdec_reset_path(decoder, trace_id, map_info_num, mem_map);
       break;
     default:
       return -1;
@@ -322,9 +336,10 @@ static int run_decoder(void *buf, size_t buf_size)
   return (ret == LIBCSDEC_SUCCESS) ? 0 : -1;
 }
 
-static libcsdec_t init_decoder(void)
+static libcsdec_t init_decoder(struct map_info *map_info, int map_info_num)
 {
   libcsdec_t decoder;
+  int i;
 
   if (!trace_bitmap) {
     trace_bitmap = malloc(trace_bitmap_size);
@@ -335,12 +350,28 @@ static libcsdec_t init_decoder(void)
     }
   }
 
+  if (!mem_img) {
+    mem_img = malloc(sizeof(struct libcsdec_memory_image) * map_info_num);
+    if (!mem_img) {
+      perror("malloc");
+      decoder = (libcsdec_t)NULL;
+      goto exit;
+    }
+    for (i = 0; i < map_info_num; i++) {
+      mem_img[i].data = map_info[i].buf;
+      mem_img[i].size = (size_t)ALIGN_UP(map_info[i].end - map_info[i].start,
+          PAGE_SIZE);
+    }
+  }
+
   switch (cov_type) {
     case edge_cov:
-      decoder = libcsdec_init_edge(trace_bitmap, trace_bitmap_size);
+      decoder = libcsdec_init_edge(trace_bitmap, trace_bitmap_size,
+          map_info_num, mem_img);
       break;
     case path_cov:
-      decoder = libcsdec_init_path(trace_bitmap, trace_bitmap_size);
+      decoder = libcsdec_init_path(trace_bitmap, trace_bitmap_size,
+          map_info_num, mem_img);
       break;
     default:
       decoder = (libcsdec_t)NULL;
@@ -423,7 +454,7 @@ static int export_trace(const char *trace_name, const char *trace_args_name)
       trace_args_name);
 
   if (export_decoder_args(trace_id, trace_path, decoder_args_path,
-        range, range_count) < 0) {
+        map_info, range_count) < 0) {
     goto exit;
   }
 
@@ -456,7 +487,7 @@ static int enable_cs_trace(pid_t pid)
 
   if (is_first_trace) {
     /* Do not specify traced PID in forkserver mode */
-    if (configure_trace(board, &devices, range, range_count, pid) < 0) {
+    if (configure_trace(board, &devices, map_info, range_count, pid) < 0) {
       fprintf(stderr, "configure_trace() failed\n");
       goto exit;
     }
@@ -611,7 +642,7 @@ int start_trace(pid_t pid, bool use_pid_trace)
 
   alloc_trace_buf();
 
-  if (decoding_on && ((ret = reset_decoder()) < 0)) {
+  if (decoding_on && ((ret = reset_decoder(map_info, range_count)) < 0)) {
     fprintf(stderr, "reset_decoder() failed\n");
     goto exit;
   }
@@ -684,8 +715,8 @@ int init_trace(pid_t parent_pid, pid_t pid)
     goto exit;
   }
 
-  if ((range_count = setup_mem_range(pid, range, RANGE_MAX)) < 0) {
-    fprintf(stderr, "setup_mem_range() failed\n");
+  if ((range_count = setup_map_info(pid, map_info, RANGE_MAX)) < 0) {
+    fprintf(stderr, "setup_map_info() failed\n");
     goto exit;
   }
 
@@ -699,7 +730,7 @@ int init_trace(pid_t parent_pid, pid_t pid)
   }
 
   if (decoding_on) {
-    decoder = init_decoder();
+    decoder = init_decoder(map_info, range_count);
     if (!decoder) {
       fprintf(stderr, "init_decoder() failed\n");
       goto exit;
@@ -749,7 +780,7 @@ void fini_trace(void)
   export_trace(DEFAULT_TRACE_NAME, DEFAULT_TRACE_ARGS_NAME);
 
   if (registration_verbose > 0) {
-    dump_mem_range(stderr, range, range_count);
+    dump_map_info(stderr, map_info, range_count);
   }
 
   fini_decoder();

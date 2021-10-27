@@ -52,12 +52,13 @@ void dump_buf(void *buf, size_t buf_size, const char *buf_path)
   fclose(fp);
 }
 
-void dump_mem_range(FILE *stream, struct addr_range *range, int count)
+void dump_map_info(FILE *stream, struct map_info *map_info, int count)
 {
   int i;
 
   for (i = 0; i < count; i++) {
-    fprintf(stream, "[0x%lx-0x%lx]: %s\n", range[i].start, range[i].end, range[i].path);
+    fprintf(stream, "[0x%lx-0x%lx]@0x%lx: %s\n", map_info[i].start,
+        map_info[i].end, map_info[i].offset, map_info[i].path);
   }
 }
 
@@ -92,19 +93,25 @@ void dump_maps(FILE *stream, pid_t pid)
   return;
 }
 
-int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
+int setup_map_info(pid_t pid, struct map_info *map_info, int info_count_max)
 {
   FILE *fp;
   char maps_path[PATH_MAX];
   char *line;
   size_t n;
   ssize_t readn;
+  int count;
+  char *path;
+  int fd;
+  size_t buf_size;
+  void *buf;
+  int i;
+
   unsigned long start;
   unsigned long end;
-  int count;
-  char c;
+  off_t offset;
   char x;
-  char *p;
+  char c;
 
   memset(maps_path, 0, sizeof(maps_path));
   snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", pid);
@@ -123,42 +130,60 @@ int setup_mem_range(pid_t pid, struct addr_range *range, int count_max)
       line[readn - 1] = '\0';
       readn--;
     }
-    sscanf(line, "%lx-%lx %c%c%c", &start, &end, &c, &c, &x);
+    sscanf(line, "%lx-%lx %c%c%c%c %lx", &start, &end, &c, &c, &x, &c, &offset);
     if (x != 'x') {
+      /* Not an executable region */
       continue;
     }
-    if (count >= count_max) {
+    if (count >= info_count_max) {
       fprintf(stderr, "WARNING: [0x%lx-0x%lx] will not trace\n", start, end);
       continue;
     }
-    // FIXME: The below registers an exec region with absolute path only
-    // It means vDSO is not traced.
-    for (p = line; *p != '\0' && *p != '/'; p++) {
+    /* Search absolute path */
+    path = strchr(line, '/');
+    if (!path) {
+      continue;
     }
-    if (*p == '/') {
-      strncpy(range[count].path, p, PATH_MAX - 1);
-      range[count].path[PATH_MAX - 1] = '\0';
-      range[count].start = start;
-      range[count].end = end;
-      count++;
-    }
+    map_info[count].start = start;
+    map_info[count].end = end;
+    map_info[count].offset = offset;
+    map_info[count].buf = NULL;
+    strncpy(map_info[count].path, path, PATH_MAX - 1);
+    count++;
   }
 
   if (line != NULL) {
     free(line);
+  }
+  fclose(fp);
+
+  for (i = 0; i < count; i++) {
+    if ((fd = open(map_info[i].path, O_RDONLY | O_SYNC)) < -1) {
+      perror("open");
+      return -1;
+    }
+    buf_size = (size_t)ALIGN_UP(map_info[i].end - map_info[i].start, PAGE_SIZE);
+    buf = mmap(NULL, buf_size, PROT_READ, MAP_PRIVATE, fd, map_info[i].offset);
+    if (!buf) {
+      perror("mmap");
+      close(fd);
+      return -1;
+    }
+    map_info[i].buf = buf;
+    close(fd);
   }
 
   return count;
 }
 
 int export_decoder_args(int trace_id, const char *trace_path,
-    const char *args_path, struct addr_range *range, int count)
+    const char *args_path, struct map_info *map_info, int count)
 {
   FILE *fp;
   int i;
   int ret;
 
-  if (trace_id < 0 || !trace_path || !args_path || !range) {
+  if (trace_id < 0 || !trace_path || !args_path || !map_info) {
     return -1;
   }
 
@@ -182,7 +207,7 @@ int export_decoder_args(int trace_id, const char *trace_path,
 
   for (i = 0; i < count; i++) {
     ret = fprintf(fp, " %s 0x%lx 0x%lx",
-        range[i].path, range[i].start, range[i].end);
+        map_info[i].path, map_info[i].start, map_info[i].end);
     if (ret < 0) {
       goto exit;
     }
@@ -540,33 +565,6 @@ bool is_syscall_exit_group(pid_t pid)
   }
 
   return false;
-}
-
-struct addr_range *append_mmap_exec_region(pid_t pid,
-    struct mmap_params *params, struct addr_range *range, size_t range_count)
-{
-  struct addr_range *r;
-
-  if (!params || !range) {
-    return NULL;
-  }
-
-  if (!(params->prot & PROT_EXEC) || params->fd < 3) {
-    return NULL;
-  }
-
-  if (range_count >= RANGE_MAX) {
-    return NULL;
-  }
-
-  r = &range[range_count];
-
-  r->start = (unsigned long)params->addr;
-  r->end = ALIGN_UP(r->start + params->length, PAGE_SIZE);
-  read_pid_fd_path(pid, params->fd, r->path, PATH_MAX);
-  range_count++;
-
-  return r;
 }
 
 int get_udmabuf_info(int udmabuf_num, unsigned long *phys_addr, size_t *size)

@@ -55,7 +55,7 @@ void show_etm_config(cs_device_t etm)
     cs_etm_config_print_ex(etm, p_config);
 }
 
-static void set_etmv4_addr_range(struct addr_range *range,
+static void set_etmv4_addr_range(struct map_info *range,
     struct _adrcmp *addr_comp, unsigned int acc_type_ex)
 {
     const unsigned int acc_type
@@ -80,7 +80,7 @@ static void set_etmv4_addr_range(struct addr_range *range,
 }
 
 static int configure_etmv4_addr_range_cid(cs_device_t etm,
-    struct addr_range *range, int range_count, unsigned long cid)
+    struct map_info *range, int range_count, unsigned long cid)
 {
     cs_etmv4_config_t tconfig;
     int error_count;
@@ -183,7 +183,7 @@ int init_etm(cs_device_t dev)
 }
 
 int configure_trace(const struct board *board, struct cs_devices_t *devices,
-    struct addr_range *range, int range_count, pid_t pid)
+    struct map_info *range, int range_count, pid_t pid)
 {
     int i, r, error_count;
 
