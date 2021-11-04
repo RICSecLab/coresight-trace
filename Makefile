@@ -128,11 +128,12 @@ libcsal:
 $(LIBCSACCESS): libcsal
 $(LIBCSACCUTIL): libcsal
 
-$(UDMABUF_KMOD):
-	$(MAKE) -C $(UDMABUF_BASE)
+$(UDMABUF_KMOD): $(UDMABUF_BASE)
+	cd $< && \
+	$(MAKE)
 
 $(UDMABUF_BUF_PATH): | $(UDMABUF_KMOD)
-	sudo insmod $^ $(notdir $@)=$(UDMABUF_BUF_SIZE)
+	sudo insmod $(UDMABUF_KMOD) $(notdir $@)=$(UDMABUF_BUF_SIZE)
 
 clean:
 	rm -f $(CS_PROXY_OBJS) $(CS_PROXY) $(CS_TRACE_OBJS) $(CS_TRACE) $(TESTS)
