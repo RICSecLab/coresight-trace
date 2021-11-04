@@ -338,7 +338,6 @@ int get_preferred_cpu(pid_t pid)
   for (i = 0; i < nprocs; i++) {
     if (CPU_ISSET_S(i, setsize, cpu_set)) {
       if (set_core_cpus(i, core_cpu_set, core_setsize) < 0) {
-        fprintf(stderr, "Failed to set related core CPU\n");
         goto exit;
       }
     }

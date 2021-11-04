@@ -704,8 +704,12 @@ int init_trace(pid_t parent_pid, pid_t pid)
 
   if (trace_cpu < 0) {
     if ((preferred_cpu = get_preferred_cpu(parent_pid)) < 0) {
+      fprintf(stderr, "INFO: Failed to get preferred CPU\n");
       /* Some boards is not supported by get_preferred_cpu() */
-      preferred_cpu = find_free_cpu();
+      if ((preferred_cpu = find_free_cpu() < 0)) {
+        fprintf(stderr, "WARNING: Failed to find free CPU. Use #%d\n",
+            DEFAULT_TRACE_CPU);
+      }
     }
     trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
   }
