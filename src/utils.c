@@ -136,7 +136,7 @@ int setup_map_info(pid_t pid, struct map_info *map_info, int info_count_max)
       continue;
     }
     if (count >= info_count_max) {
-      fprintf(stderr, "WARNING: [0x%lx-0x%lx] will not trace\n", start, end);
+      fprintf(stderr, "INFO: [0x%lx-0x%lx] will not be traced\n", start, end);
       continue;
     }
     /* Search absolute path */
