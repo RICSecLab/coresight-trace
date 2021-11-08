@@ -108,3 +108,7 @@ Please open GitHub Issues and Pull Requests. All commits must include a `Signed-
 ## License
 
 coresight-trace is released under the [Apache License, Version 2.0](https://opensource.org/licenses/Apache-2.0).
+
+## Acknowledgements
+
+This project has received funding from the Acquisition, Technology & Logistics Agency (ATLA) under the National Security Technology Research Promotion Fund 2021 (JPJ004596).
