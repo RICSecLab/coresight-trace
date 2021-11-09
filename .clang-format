@@ -1,6 +1,9 @@
 BasedOnStyle: Google
 BreakBeforeBraces: WebKit
+ColumnLimit: 80
 IndentWidth: 2
 Language: Cpp
+SortIncludes: false
 TabWidth: 2
 UseTab: Never
+...
