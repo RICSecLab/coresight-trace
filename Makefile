@@ -111,6 +111,9 @@ debug: $(CS_TRACE) $(TESTS) | $(UDMABUF_BUF_PATH)
 	cd $(DIR) && \
 	sudo gdb --args $(realpath $(CS_TRACE)) $(CS_TRACE_FLAGS) -- $(realpath $(TRACEE)) $(TRACEE_ARGS)
 
+format:
+	clang-format -i $(INC)/*.h src/*.c
+
 $(LIBCSDEC):
 	$(MAKE) -C $(CSDEC_BASE)
 
@@ -142,4 +145,4 @@ dist-clean: clean
 	$(MAKE) -C $(CSAL_BASE) clean $(CSAL_FLAGS)
 	$(MAKE) -C $(CSDEC_BASE) clean
 
-.PHONY: all trace debug decode libcsal clean dist-clean
+.PHONY: all trace debug decode format libcsal clean dist-clean

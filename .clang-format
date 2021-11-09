@@ -1,0 +1,6 @@
+BasedOnStyle: Google
+BreakBeforeBraces: WebKit
+IndentWidth: 2
+Language: Cpp
+TabWidth: 2
+UseTab: Never
