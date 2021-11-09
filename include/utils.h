@@ -15,7 +15,7 @@
 #include "libcsdec.h"
 
 #define PAGE_SIZE 0x1000
-#define ALIGN_UP(val, align) (((val) + (align) - 1) & ~((align) - 1))
+#define ALIGN_UP(val, align) (((val) + (align)-1) & ~((align)-1))
 
 #define RANGE_MAX (1)
 
@@ -41,7 +41,8 @@ void dump_maps(FILE *stream, pid_t pid);
 void dump_map_info(FILE *stream, struct map_info *map_info, int count);
 int setup_map_info(pid_t pid, struct map_info *map_info, int info_count_max);
 int export_decoder_args(int trace_id, const char *trace_path,
-    const char *args_path, struct map_info *map_info, int count);
+                        const char *args_path, struct map_info *map_info,
+                        int count);
 int get_preferred_cpu(pid_t pid);
 int find_free_cpu(void);
 int set_cpu_affinity(int cpu, pid_t pid);

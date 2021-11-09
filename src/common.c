@@ -45,7 +45,8 @@
 #define TRACE_DISABLE_TRIAL 8
 #define TRACE_DISABLE_TRIAL_USLEEP 10
 
-#define CSDBG() do { \
+#define CSDBG()                                     \
+  do {                                              \
     fprintf(stderr, "%s:%d\n", __func__, __LINE__); \
   } while (0);
 
@@ -149,8 +150,8 @@ static void set_trace_state(trace_state_t new_state)
   } else if (old_state == suspended_state && new_state == running_state) {
     signal_trace_event(resume_event);
   } else {
-    fprintf(stderr, "Unexpected trace state transition: %d -> %d\n",
-        old_state, new_state);
+    fprintf(stderr, "Unexpected trace state transition: %d -> %d\n", old_state,
+            new_state);
   }
   pthread_mutex_unlock(&trace_state_mutex);
 }
@@ -256,8 +257,7 @@ static void *decoder_worker(void *arg)
 
   while (1) {
     pthread_mutex_lock(&trace_event_mutex);
-    while (trace_event != start_event
-        && trace_event != fini_event) {
+    while (trace_event != start_event && trace_event != fini_event) {
       pthread_cond_wait(&trace_event_cond, &trace_event_mutex);
     }
     event = trace_event; /* TODO: trace_event can be changed in if cond. */
@@ -359,19 +359,19 @@ static libcsdec_t init_decoder(struct map_info *map_info, int map_info_num)
     }
     for (i = 0; i < map_info_num; i++) {
       mem_img[i].data = map_info[i].buf;
-      mem_img[i].size = (size_t)ALIGN_UP(map_info[i].end - map_info[i].start,
-          PAGE_SIZE);
+      mem_img[i].size =
+          (size_t)ALIGN_UP(map_info[i].end - map_info[i].start, PAGE_SIZE);
     }
   }
 
   switch (cov_type) {
     case edge_cov:
       decoder = libcsdec_init_edge(trace_bitmap, trace_bitmap_size,
-          map_info_num, mem_img);
+                                   map_info_num, mem_img);
       break;
     case path_cov:
       decoder = libcsdec_init_path(trace_bitmap, trace_bitmap_size,
-          map_info_num, mem_img);
+                                   map_info_num, mem_img);
       break;
     default:
       decoder = (libcsdec_t)NULL;
@@ -405,7 +405,7 @@ static int fini_decoder(void)
 static int alloc_trace_buf(void)
 {
   trace_buf = mmap(NULL, DEFAULT_TRACE_SIZE, PROT_READ | PROT_WRITE,
-      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (!trace_buf) {
     perror("mmap");
     return -1;
@@ -451,10 +451,10 @@ static int export_trace(const char *trace_name, const char *trace_args_name)
   memset(decoder_args_path, 0, sizeof(decoder_args_path));
   snprintf(trace_path, sizeof(trace_path), "%s/%s", cwd, trace_name);
   snprintf(decoder_args_path, sizeof(decoder_args_path), "%s/%s", cwd,
-      trace_args_name);
+           trace_args_name);
 
-  if (export_decoder_args(trace_id, trace_path, decoder_args_path,
-        map_info, range_count) < 0) {
+  if (export_decoder_args(trace_id, trace_path, decoder_args_path, map_info,
+                          range_count) < 0) {
     goto exit;
   }
 
@@ -569,7 +569,8 @@ int fetch_trace(void)
 
   trace_buf_ptr = (void *)ALIGN_UP((unsigned long)trace_buf_ptr, 0x8);
 
-  buf_remain = trace_buf_size - (size_t)((char *)trace_buf_ptr - (char *)trace_buf);
+  buf_remain =
+      trace_buf_size - (size_t)((char *)trace_buf_ptr - (char *)trace_buf);
   /* No space left in trace_buf. */
   if ((size_t)len > buf_remain) {
     new_trace_buf_size = trace_buf_size * 2;
@@ -579,10 +580,11 @@ int fetch_trace(void)
       perror("mremap");
       goto exit;
     }
-    decoded_trace_buf = (void *)((char *)new_trace_buf
-        + ((char *)decoded_trace_buf - (char *)trace_buf));
-    trace_buf_ptr = (void *)((char *)new_trace_buf
-        + ((char *)trace_buf_ptr - (char *)trace_buf));
+    decoded_trace_buf =
+        (void *)((char *)new_trace_buf +
+                 ((char *)decoded_trace_buf - (char *)trace_buf));
+    trace_buf_ptr = (void *)((char *)new_trace_buf +
+                             ((char *)trace_buf_ptr - (char *)trace_buf));
     trace_buf = new_trace_buf;
     trace_buf_size = new_trace_buf_size;
     buf_remain = (size_t)((char *)trace_buf_ptr - (char *)trace_buf);
@@ -612,7 +614,7 @@ int decode_trace(void)
 
   buf = decoded_trace_buf;
   buf_size = (size_t)((char *)trace_buf_ptr - (char *)buf);
-  
+
   ret = run_decoder(buf, buf_size);
   if (ret < 0) {
     goto exit;
@@ -625,10 +627,7 @@ exit:
   return ret;
 }
 
-void trace_suspend_resume_callback(void)
-{
-  set_trace_state(suspended_state);
-}
+void trace_suspend_resume_callback(void) { set_trace_state(suspended_state); }
 
 /* Start trace session. CoreSight and decoder must be initialized. */
 int start_trace(pid_t pid, bool use_pid_trace)
@@ -674,7 +673,8 @@ int stop_trace(bool disable_all)
 
   set_trace_state(ready_state);
 
-  /* FIXME: Hang with condition trace_state == ready_state && trace_event == stop_event */
+  /* FIXME: Hang with condition trace_state == ready_state && trace_event ==
+   * stop_event */
   pthread_mutex_lock(&trace_decoder_mutex);
   while (!decoder_ready) {
     pthread_cond_wait(&trace_decoder_cond, &trace_decoder_mutex);
@@ -708,7 +708,7 @@ int init_trace(pid_t parent_pid, pid_t pid)
       /* Some boards is not supported by get_preferred_cpu() */
       if ((preferred_cpu = find_free_cpu() < 0)) {
         fprintf(stderr, "WARNING: Failed to find free CPU. Use #%d\n",
-            DEFAULT_TRACE_CPU);
+                DEFAULT_TRACE_CPU);
       }
     }
     trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;

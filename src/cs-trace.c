@@ -90,26 +90,37 @@ static void usage(char *argv0)
   fprintf(stderr, "Usage: %s [OPTIONS] -- EXE [ARGS]\n", argv0);
   fprintf(stderr, "CoreSight process tracer\n");
   fprintf(stderr, "[OPTIONS]\n");
-  fprintf(stderr, "  -b, --board=NAME\t\tspecify board name (default: %s)\n", board_name);
-  fprintf(stderr, "  -c, --cpu=INT\t\t\tbind traced process to CPU (default: %d)\n", trace_cpu);
-  fprintf(stderr, "  -d, --decoding={edge,path}\tenable trace decoding (default: off)\n");
-  fprintf(stderr, "  -e, --export\t\t\tenable exporting config (default: %d)\n", export_config);
-  fprintf(stderr, "  -u, --udmabuf=INT\t\tspecify u-dma-buf device number to use (default: %d)", udmabuf_num);
-  fprintf(stderr, "  -v, --verbose[=INT]\t\tverbose output level (default: %d)\n", registration_verbose);
+  fprintf(stderr, "  -b, --board=NAME\t\tspecify board name (default: %s)\n",
+          board_name);
+  fprintf(stderr,
+          "  -c, --cpu=INT\t\t\tbind traced process to CPU (default: %d)\n",
+          trace_cpu);
+  fprintf(stderr,
+          "  -d, --decoding={edge,path}\tenable trace decoding (default: "
+          "off)\n");
+  fprintf(stderr, "  -e, --export\t\t\tenable exporting config (default: %d)\n",
+          export_config);
+  fprintf(stderr,
+          "  -u, --udmabuf=INT\t\tspecify u-dma-buf device number to use "
+          "(default: %d)",
+          udmabuf_num);
+  fprintf(stderr,
+          "  -v, --verbose[=INT]\t\tverbose output level (default: %d)\n",
+          registration_verbose);
   fprintf(stderr, "  -h, --help\t\t\tshow this help\n");
 }
 
 int main(int argc, char *argv[])
 {
   const struct option long_options[] = {
-    {"board", required_argument, NULL, 'b'},
-    {"cpu", required_argument, NULL, 'c'},
-    {"decoding", required_argument, NULL, 'd'},
-    {"export", no_argument, NULL, 'e'},
-    {"udmabuf", required_argument, NULL, 'u'},
-    {"verbose", optional_argument, NULL, 'v'},
-    {"help", no_argument, NULL, 'h'},
-    {0, 0, 0, 0},
+      {"board", required_argument, NULL, 'b'},
+      {"cpu", required_argument, NULL, 'c'},
+      {"decoding", required_argument, NULL, 'd'},
+      {"export", no_argument, NULL, 'e'},
+      {"udmabuf", required_argument, NULL, 'u'},
+      {"verbose", optional_argument, NULL, 'v'},
+      {"help", no_argument, NULL, 'h'},
+      {0, 0, 0, 0},
   };
 
   char **argvp;
@@ -126,7 +137,8 @@ int main(int argc, char *argv[])
     exit(EXIT_SUCCESS);
   }
 
-  while ((opt = getopt_long(argc, argv, "b:c:d:ev::h", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, "b:c:d:ev::h", long_options,
+                            &option_index)) != -1) {
     switch (opt) {
       case 'b':
         board_name = optarg;

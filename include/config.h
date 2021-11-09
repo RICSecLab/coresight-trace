@@ -15,7 +15,7 @@ void cs_etb_flush_and_wait_stop(struct cs_devices_t *devices);
 int init_etm(cs_device_t dev);
 void show_etm_config(cs_device_t etm);
 int configure_trace(const struct board *board, struct cs_devices_t *devices,
-    struct map_info *range, int range_count, pid_t pid);
+                    struct map_info *range, int range_count, pid_t pid);
 int enable_trace(const struct board *board, struct cs_devices_t *devices);
 int disable_trace(const struct board *board, struct cs_devices_t *devices);
 int enable_trace_sinks_only(struct cs_devices_t *devices);

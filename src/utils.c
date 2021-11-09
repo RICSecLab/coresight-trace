@@ -46,7 +46,8 @@ void dump_buf(void *buf, size_t buf_size, const char *buf_path)
   }
 
   if ((fwrite_size = fwrite(buf, 1, buf_size, fp)) != buf_size) {
-    fprintf(stderr, "fwrite() failed: %ld (expected: %ld)\n", fwrite_size, buf_size);
+    fprintf(stderr, "fwrite() failed: %ld (expected: %ld)\n", fwrite_size,
+            buf_size);
   }
 
   fclose(fp);
@@ -58,7 +59,7 @@ void dump_map_info(FILE *stream, struct map_info *map_info, int count)
 
   for (i = 0; i < count; i++) {
     fprintf(stream, "[0x%lx-0x%lx]@0x%lx: %s\n", map_info[i].start,
-        map_info[i].end, map_info[i].offset, map_info[i].path);
+            map_info[i].end, map_info[i].offset, map_info[i].path);
   }
 }
 
@@ -177,7 +178,8 @@ int setup_map_info(pid_t pid, struct map_info *map_info, int info_count_max)
 }
 
 int export_decoder_args(int trace_id, const char *trace_path,
-    const char *args_path, struct map_info *map_info, int count)
+                        const char *args_path, struct map_info *map_info,
+                        int count)
 {
   FILE *fp;
   int i;
@@ -206,8 +208,8 @@ int export_decoder_args(int trace_id, const char *trace_path,
   }
 
   for (i = 0; i < count; i++) {
-    ret = fprintf(fp, " %s 0x%lx 0x%lx",
-        map_info[i].path, map_info[i].start, map_info[i].end);
+    ret = fprintf(fp, " %s 0x%lx 0x%lx", map_info[i].path, map_info[i].start,
+                  map_info[i].end);
     if (ret < 0) {
       goto exit;
     }
@@ -269,7 +271,7 @@ static int set_core_cpus(int cpu, cpu_set_t *cpu_set, size_t setsize)
 
   memset(core_cpus_list_path, 0, sizeof(core_cpus_list_path));
   snprintf(core_cpus_list_path, sizeof(core_cpus_list_path),
-      "/sys/devices/system/cpu/cpu%d/topology/core_cpus_list", cpu);
+           "/sys/devices/system/cpu/cpu%d/topology/core_cpus_list", cpu);
 
   fp = fopen(core_cpus_list_path, "r");
   if (!fp) {
@@ -364,7 +366,8 @@ exit:
   return ret;
 }
 
-/* ref: https://github.com/AFLplusplus/AFLplusplus/blob/stable/src/afl-fuzz-init.c */
+/* ref:
+ * https://github.com/AFLplusplus/AFLplusplus/blob/stable/src/afl-fuzz-init.c */
 /* Finds a free CPU core by reading procfs. */
 int find_free_cpu(void)
 {
@@ -413,7 +416,7 @@ int find_free_cpu(void)
 
       memset(status_path, 0, PATH_MAX);
       snprintf(status_path, PATH_MAX, "/proc/%s/task/%s/status",
-          proc_entry->d_name, task_entry->d_name);
+               proc_entry->d_name, task_entry->d_name);
       if (!(status_fp = fopen(status_path, "r"))) {
         continue;
       }
@@ -459,7 +462,7 @@ int set_cpu_affinity(int cpu, pid_t pid)
   if (!alloc_cpu_set(&cpu_set, &setsize)) {
     goto exit;
   }
-  CPU_SET_S(cpu, setsize,  cpu_set);
+  CPU_SET_S(cpu, setsize, cpu_set);
   if (sched_setaffinity(pid, setsize, cpu_set) < 0) {
     perror("sched_setaffinity");
     goto exit;
@@ -580,17 +583,16 @@ int get_udmabuf_info(int udmabuf_num, unsigned long *phys_addr, size_t *size)
   ret = -1;
 
   memset(udmabuf_path, '\0', sizeof(udmabuf_path));
-  snprintf(udmabuf_path, sizeof(udmabuf_path), "%s/udmabuf%d",
-      udmabuf_root, udmabuf_num);
+  snprintf(udmabuf_path, sizeof(udmabuf_path), "%s/udmabuf%d", udmabuf_root,
+           udmabuf_num);
   if (stat(udmabuf_path, &sb) != 0 || (!S_ISDIR(sb.st_mode))) {
-    fprintf(stderr, "u-dma-buf device 'udmabuf%d' not found\n",
-        udmabuf_num);
+    fprintf(stderr, "u-dma-buf device 'udmabuf%d' not found\n", udmabuf_num);
     return ret;
   }
 
   memset(tmp_path, '\0', sizeof(tmp_path));
-  snprintf(tmp_path, sizeof(tmp_path), "%s/udmabuf%d/phys_addr",
-      udmabuf_root, udmabuf_num);
+  snprintf(tmp_path, sizeof(tmp_path), "%s/udmabuf%d/phys_addr", udmabuf_root,
+           udmabuf_num);
   if ((fd = open(tmp_path, O_RDONLY)) < 0) {
     perror("open");
     return -1;
@@ -606,8 +608,8 @@ int get_udmabuf_info(int udmabuf_num, unsigned long *phys_addr, size_t *size)
   close(fd);
 
   memset(tmp_path, '\0', sizeof(tmp_path));
-  snprintf(tmp_path, sizeof(tmp_path), "%s/udmabuf%d/size",
-      udmabuf_root, udmabuf_num);
+  snprintf(tmp_path, sizeof(tmp_path), "%s/udmabuf%d/size", udmabuf_root,
+           udmabuf_num);
   if ((fd = open(tmp_path, O_RDONLY)) < 0) {
     perror("open");
     return -1;
