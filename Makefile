@@ -82,11 +82,6 @@ endif
 
 TESTS:= \
   tests/fib \
-  tests/fib-large \
-  tests/fib-num \
-  tests/loop \
-  tests/bf \
-  tests/toy \
 
 DATE:=$(shell date +%Y-%m-%d-%H-%M-%S)
 DIR?=trace/$(DATE)
