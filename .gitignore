@@ -6,9 +6,5 @@ cs-trace
 *.o
 *.bin
 *.ini
-tests/bf
 tests/fib
-tests/fib-large
-tests/fib-num
-tests/loop
-tests/toy
+edge_coverage_bitmap.out
