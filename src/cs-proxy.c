@@ -28,6 +28,7 @@
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <sys/ptrace.h>
 #include <fcntl.h>
 
 #define AFLCS_PROXY_NAME "afl-cs-proxy"
@@ -39,6 +40,7 @@ s32 fsrv_pid = -1;
 s32 proxy_ctl_fd = -1;
 s32 proxy_st_fd = -1;
 u8 first_run = 1;
+u8 no_forksrv = 0;
 
 #ifdef EXEC_COUNT
 u32 exec_count = 0;
@@ -145,24 +147,6 @@ static void __afl_start_forkserver(char *argv[])
   u8 tmp[4] = {0, 0, 0, 0};
   u32 status = 0;
   int st_pipe[2], ctl_pipe[2];
-  char *ptr;
-
-  /* Mark as AFL++ CoreSight mode is enabled. */
-  setenv("__AFLCS_ENABLE", "1", 0);
-
-  if ((ptr = getenv("AFLCS_COV")) != NULL) {
-    if (!strcmp(ptr, "edge")) {
-      cov_type = edge_cov;
-    } else if (!strcmp(ptr, "path")) {
-      cov_type = path_cov;
-    } else {
-      FATAL("Error: unknown coverage type '%s'", ptr);
-    }
-  }
-
-  if ((ptr = getenv("AFLCS_UDMABUF")) != NULL) {
-    udmabuf_num = atoi(ptr);
-  }
 
   if (pipe(st_pipe) || pipe(ctl_pipe)) {
     PFATAL("pipe() failed");
@@ -257,6 +241,80 @@ static s32 __afl_end_testcase(s32 status)
   return 0;
 }
 
+static s32 __afl_fauxsrv_execv(char *argv[])
+{
+  u8 tmp[4] = {0, 0, 0, 0};
+  int status = 0;
+  s32 was_killed, child_pid;
+
+  /* Phone home and tell the parent that we're OK. */
+
+  if (write(FORKSRV_FD + 1, tmp, 4) != 4) return -1;
+
+  while (1) {
+    /* Wait for parent by reading from the pipe. Abort if read fails. */
+    if (read(FORKSRV_FD, &was_killed, 4) != 4) return -1;
+
+    /* Create a clone of our process. */
+
+    child_pid = fork();
+
+    if (child_pid < 0) {
+      PFATAL("Fork failed");
+    }
+
+    /* In child process: close fds, resume execution. */
+
+    if (!child_pid) {
+      /* TODO: Add SIGPIPE handling */
+
+      close(FORKSRV_FD);
+      close(FORKSRV_FD + 1);
+
+      if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) < 0) {
+        PFATAL("ptrace failed");
+      }
+
+      execvp(argv[0], argv);
+
+      WARNF("Error: execv to target failed\n");
+      break;
+    }
+
+    waitpid(child_pid, &status, 0);
+    if (WIFSTOPPED(status) && WSTOPSIG(status) == PTRACE_EVENT_VFORK_DONE) {
+      init_trace(getpid(), child_pid);
+      start_trace(child_pid, true);
+      ptrace(PTRACE_CONT, child_pid, NULL, NULL);
+    }
+
+    /* In parent process: write PID to AFL. */
+    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) return -1;
+
+    /* Handle child process suspend/resume */
+    while (1) {
+      waitpid(child_pid, &status, 0);
+      if (WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) {
+        trace_suspend_resume_callback();
+      } else {
+        /* Child process has exited. */
+        break;
+      }
+    }
+
+    if (stop_trace(false) < 0) return -1;
+
+    /* Relay wait status to AFL pipe, then loop back. */
+    if (write(FORKSRV_FD + 1, &status, 4) != 4) return -1;
+
+#ifdef EXEC_COUNT
+    if (++exec_count > EXEC_COUNT) return 0;
+#endif
+  }
+
+  return 0;
+}
+
 /* you just need to modify the while() loop in this main() */
 
 int main(int argc, char *argv[])
@@ -264,6 +322,7 @@ int main(int argc, char *argv[])
   s32 status;
   int i;
   char **argvp;
+  char *ptr;
 
   if (argc < 3) {
     return -1;
@@ -287,8 +346,34 @@ int main(int argc, char *argv[])
     }
   }
 
+  /* Mark as AFL++ CoreSight mode is enabled. */
+  setenv("__AFLCS_ENABLE", "1", 0);
+
+  if (getenv("AFLCS_NO_FORKSRV")) {
+    no_forksrv = 1;
+  }
+
+  if ((ptr = getenv("AFLCS_COV")) != NULL) {
+    if (!strcmp(ptr, "edge")) {
+      cov_type = edge_cov;
+    } else if (!strcmp(ptr, "path")) {
+      cov_type = path_cov;
+    } else {
+      FATAL("Error: unknown coverage type '%s'", ptr);
+    }
+  }
+
+  if ((ptr = getenv("AFLCS_UDMABUF")) != NULL) {
+    udmabuf_num = atoi(ptr);
+  }
+
   /* then we initialize the shared memory map and start the forkserver */
   __afl_map_shm();
+
+  if (no_forksrv) {
+    return __afl_fauxsrv_execv(argvp);
+  }
+
   __afl_start_forkserver(argvp);
 
   while (__afl_next_testcase() > 0) {
