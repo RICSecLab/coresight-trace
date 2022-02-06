@@ -202,9 +202,11 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
       return -1;
     }
     if (cs_set_trace_source_id(devices->ptm[i], 0x10 + i) < 0) {
-      return -1;
+      fprintf(stderr, "Failed to set trace source id for CPU #%d\n", i);
+      continue;
     }
     if (init_etm(devices->ptm[i]) < 0) {
+      fprintf(stderr, "Failed to init etm for CPU #%d\n", i);
       return -1;
     }
   }

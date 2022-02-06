@@ -489,12 +489,12 @@ static int enable_cs_trace(pid_t pid)
     /* Do not specify traced PID in forkserver mode */
     if (configure_trace(board, &devices, map_info, range_count, pid) < 0) {
       fprintf(stderr, "configure_trace() failed\n");
-      goto exit;
+      //goto exit;
     }
     /* Enable ETMs and trace sinks for the first time */
     if (enable_trace(board, &devices) < 0) {
       fprintf(stderr, "enable_trace() failed\n");
-      goto exit;
+      //goto exit;
     }
     is_first_trace = false;
   } else {
