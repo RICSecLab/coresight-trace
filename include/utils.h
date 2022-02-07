@@ -39,7 +39,7 @@ struct mmap_params {
 void dump_buf(void *buf, size_t buf_size, const char *buf_path);
 void dump_maps(FILE *stream, pid_t pid);
 void dump_map_info(FILE *stream, struct map_info *map_info, int count);
-int setup_map_info(pid_t pid, struct map_info *map_info, int info_count_max);
+int setup_map_info(pid_t pid, struct map_info **map_info, int info_count_max);
 int export_decoder_args(int trace_id, const char *trace_path,
                         const char *args_path, struct map_info *map_info,
                         int count);

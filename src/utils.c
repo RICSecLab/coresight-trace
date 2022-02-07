@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <ctype.h>
 #include <pthread.h>
+#include <assert.h>
 
 #include <sys/mman.h>
 #include <sys/ptrace.h>
@@ -94,7 +95,7 @@ void dump_maps(FILE *stream, pid_t pid)
   return;
 }
 
-int setup_map_info(pid_t pid, struct map_info *map_info, int info_count_max)
+int setup_map_info(pid_t pid, struct map_info **map_info, int info_count_max)
 {
   FILE *fp;
   char maps_path[PATH_MAX];
@@ -136,20 +137,21 @@ int setup_map_info(pid_t pid, struct map_info *map_info, int info_count_max)
       /* Not an executable region */
       continue;
     }
-    if (count >= info_count_max) {
-      fprintf(stderr, "INFO: [0x%lx-0x%lx] will not be traced\n", start, end);
-      continue;
+    while (count >= info_count_max) {
+      info_count_max *= 2;
+      assert (info_count_max > 0);
+      *map_info = realloc(*map_info, sizeof(struct map_info)*info_count_max);
     }
     /* Search absolute path */
     path = strchr(line, '/');
     if (!path) {
       continue;
     }
-    map_info[count].start = start;
-    map_info[count].end = end;
-    map_info[count].offset = offset;
-    map_info[count].buf = NULL;
-    strncpy(map_info[count].path, path, PATH_MAX - 1);
+    (*map_info)[count].start = start;
+    (*map_info)[count].end = end;
+    (*map_info)[count].offset = offset;
+    (*map_info)[count].buf = NULL;
+    strncpy((*map_info)[count].path, path, PATH_MAX - 1);
     count++;
   }
 
@@ -159,18 +161,18 @@ int setup_map_info(pid_t pid, struct map_info *map_info, int info_count_max)
   fclose(fp);
 
   for (i = 0; i < count; i++) {
-    if ((fd = open(map_info[i].path, O_RDONLY | O_SYNC)) < -1) {
+    if ((fd = open((*map_info)[i].path, O_RDONLY | O_SYNC)) < -1) {
       perror("open");
       return -1;
     }
-    buf_size = (size_t)ALIGN_UP(map_info[i].end - map_info[i].start, PAGE_SIZE);
-    buf = mmap(NULL, buf_size, PROT_READ, MAP_PRIVATE, fd, map_info[i].offset);
+    buf_size = (size_t)ALIGN_UP((*map_info)[i].end - (*map_info)[i].start, PAGE_SIZE);
+    buf = mmap(NULL, buf_size, PROT_READ, MAP_PRIVATE, fd, (*map_info)[i].offset);
     if (!buf) {
       perror("mmap");
       close(fd);
       return -1;
     }
-    map_info[i].buf = buf;
+    (*map_info)[i].buf = buf;
     close(fd);
   }
 
