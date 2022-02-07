@@ -78,7 +78,7 @@ bool export_config = false;
 unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
 int range_count = 0;
-struct map_info map_info[RANGE_MAX];
+struct map_info *map_info;
 struct libcsdec_memory_map *mem_map = NULL;
 struct libcsdec_memory_image *mem_img = NULL;
 cov_type_t cov_type = edge_cov;
@@ -489,12 +489,12 @@ static int enable_cs_trace(pid_t pid)
     /* Do not specify traced PID in forkserver mode */
     if (configure_trace(board, &devices, map_info, range_count, pid) < 0) {
       fprintf(stderr, "configure_trace() failed\n");
-      goto exit;
+      //goto exit;
     }
     /* Enable ETMs and trace sinks for the first time */
     if (enable_trace(board, &devices) < 0) {
       fprintf(stderr, "enable_trace() failed\n");
-      goto exit;
+      //goto exit;
     }
     is_first_trace = false;
   } else {
@@ -719,7 +719,8 @@ int init_trace(pid_t parent_pid, pid_t pid)
     goto exit;
   }
 
-  if ((range_count = setup_map_info(pid, map_info, RANGE_MAX)) < 0) {
+  map_info = (struct map_info*)malloc(sizeof(struct map_info)*RANGE_MAX);
+  if ((range_count = setup_map_info(pid, &map_info, RANGE_MAX)) < 0) {
     fprintf(stderr, "setup_map_info() failed\n");
     goto exit;
   }
