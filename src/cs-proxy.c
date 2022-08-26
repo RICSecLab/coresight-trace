@@ -41,6 +41,7 @@ s32 proxy_ctl_fd = -1;
 s32 proxy_st_fd = -1;
 u8 first_run = 1;
 u8 no_forksrv = 0;
+bool disable_all = false;
 
 #ifdef EXEC_COUNT
 u32 exec_count = 0;
@@ -302,7 +303,7 @@ static s32 __afl_fauxsrv_execv(char *argv[])
       }
     }
 
-    if (stop_trace(false) < 0) return -1;
+    if (stop_trace(disable_all) < 0) return -1;
 
     /* Relay wait status to AFL pipe, then loop back. */
     if (write(FORKSRV_FD + 1, &status, 4) != 4) return -1;
@@ -353,6 +354,10 @@ int main(int argc, char *argv[])
     no_forksrv = 1;
   }
 
+  if (getenv("AFLCS_STOP_ALL_DEV")) {
+    disable_all = true;
+  }
+
   if ((ptr = getenv("AFLCS_COV")) != NULL) {
     if (!strcmp(ptr, "edge")) {
       cov_type = edge_cov;
@@ -388,7 +393,7 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (stop_trace(false) < 0) return -1;
+    if (stop_trace(disable_all) < 0) return -1;
 
     /* report the test case is done and wait for the next */
     if (__afl_end_testcase(status) < 0) return -1;
