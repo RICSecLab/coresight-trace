@@ -33,8 +33,11 @@
 
 #define AFLCS_PROXY_NAME "afl-cs-proxy"
 #define AFLCS_FORKSRV_FD (FORKSRV_FD - 3)
+#define AFLCS_DEFAULT_CYCLE_CNT (1000)
+#define AFLCS_CUSTOM_STATUS (-1)
 
 char *__afl_proxy_name = AFLCS_PROXY_NAME;
+u32 default_cycle_count = AFLCS_DEFAULT_CYCLE_CNT;
 
 s32 fsrv_pid = -1;
 s32 proxy_ctl_fd = -1;
@@ -210,7 +213,7 @@ static void __afl_start_forkserver(char *argv[])
   }
 }
 
-static u32 __afl_next_testcase(void)
+static u32 __afl_next_testcase(u32 cycle_count)
 {
   s32 was_killed, child_pid;
 
@@ -226,7 +229,7 @@ static u32 __afl_next_testcase(void)
     first_run = 0;
   }
 
-  start_trace(child_pid, false);
+  start_trace(child_pid, false, cycle_count == default_cycle_count);
 
   /* report that we are starting the target */
   if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) return -1;
@@ -249,10 +252,13 @@ static s32 __afl_fauxsrv_execv(char *argv[])
   u8 tmp[4] = {0, 0, 0, 0};
   int status = 0;
   s32 was_killed, child_pid;
+  u32 cycle_count;
 
   /* Phone home and tell the parent that we're OK. */
 
   if (write(FORKSRV_FD + 1, tmp, 4) != 4) return -1;
+
+  cycle_count = default_cycle_count;
 
   while (1) {
     /* Wait for parent by reading from the pipe. Abort if read fails. */
@@ -287,7 +293,7 @@ static s32 __afl_fauxsrv_execv(char *argv[])
     waitpid(child_pid, &status, 0);
     if (WIFSTOPPED(status) && WSTOPSIG(status) == PTRACE_EVENT_VFORK_DONE) {
       init_trace(getpid(), child_pid);
-      start_trace(child_pid, true);
+      start_trace(child_pid, true, cycle_count == default_cycle_count);
       ptrace(PTRACE_CONT, child_pid, NULL, NULL);
     }
 
@@ -305,7 +311,13 @@ static s32 __afl_fauxsrv_execv(char *argv[])
       }
     }
 
-    if (stop_trace(disable_all) < 0) return -1;
+    if (--cycle_count) {
+      if (stop_trace(disable_all) < 0) return -1;
+    } else {
+      /* cycle_count is 0. */
+      if (stop_trace(true) < 0) return -1;
+      cycle_count = default_cycle_count;
+    }
 
     /* Relay wait status to AFL pipe, then loop back. */
     if (write(FORKSRV_FD + 1, &status, 4) != 4) return -1;
@@ -326,6 +338,7 @@ int main(int argc, char *argv[])
   int i;
   char **argvp;
   char *ptr;
+  u32 cycle_count;
 
   if (argc < 3) {
     return -1;
@@ -360,6 +373,10 @@ int main(int argc, char *argv[])
     disable_all = true;
   }
 
+  if ((ptr = getenv("AFLCS_CYCLE_CNT")) != NULL) {
+    default_cycle_count = atoi(ptr);
+  }
+
   if ((ptr = getenv("AFLCS_COV")) != NULL) {
     if (!strcmp(ptr, "edge")) {
       cov_type = edge_cov;
@@ -391,7 +408,9 @@ int main(int argc, char *argv[])
 
   __afl_start_forkserver(argvp);
 
-  while (__afl_next_testcase() > 0) {
+  cycle_count = default_cycle_count;
+
+  while (__afl_next_testcase(cycle_count) > 0) {
     /* Handle child process suspend/resume */
     while (1) {
       if (read(proxy_st_fd, &status, 4) != 4) return -1;
@@ -403,7 +422,17 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (stop_trace(disable_all) < 0) return -1;
+    if (--cycle_count) {
+      if (stop_trace(disable_all) < 0) {
+        status = AFLCS_CUSTOM_STATUS;
+      }
+    } else {
+      /* cycle_count is 0. */
+      if (stop_trace(true) < 0) {
+        status = AFLCS_CUSTOM_STATUS;
+      }
+      cycle_count = default_cycle_count;
+    }
 
     /* report the test case is done and wait for the next */
     if (__afl_end_testcase(status) < 0) return -1;

@@ -65,7 +65,7 @@ void parent(pid_t pid, int *child_status)
   waitpid(pid, &wstatus, 0);
   if (WIFSTOPPED(wstatus) && WSTOPSIG(wstatus) == PTRACE_EVENT_VFORK_DONE) {
     init_trace(getpid(), pid);
-    start_trace(pid, true);
+    start_trace(pid, true, false);
     ptrace(PTRACE_CONT, pid, NULL, NULL);
   }
 
