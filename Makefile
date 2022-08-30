@@ -63,6 +63,10 @@ else
   CFLAGS+=-Ofast
 endif
 
+ifneq ($(strip $(LSAN)),)
+  CFLAGS+=-fsanitize=leak -g
+endif
+
 CS_PROXY_OBJS:= \
   $(COMMON_OBJS) \
   src/cs-proxy.o \
