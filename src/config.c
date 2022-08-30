@@ -24,6 +24,22 @@ extern unsigned long etr_ram_addr;
 extern size_t etr_ram_size;
 extern int registration_verbose;
 
+static void disable_all_trace_sinks(struct cs_devices_t *devices)
+{
+  if (!devices) {
+    return;
+  }
+
+  if (devices->trace_sinks[0]) {
+    if (cs_sink_is_enabled(devices->trace_sinks[0])) {
+      cs_sink_disable(devices->trace_sinks[0]);
+    }
+  }
+  if (cs_sink_is_enabled(devices->etb)) {
+    cs_sink_disable(devices->etb);
+  }
+}
+
 void cs_etb_flush_and_wait_stop(struct cs_devices_t *devices)
 {
   unsigned int ffcr_val, status_val;
