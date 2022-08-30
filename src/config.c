@@ -210,7 +210,8 @@ int configure_trace(const struct board *board, struct cs_devices_t *devices,
     cs_disable_tpiu();
 #endif
   /* While programming, ensure we are not collecting trace */
-  cs_sink_disable(devices->etb);
+  disable_all_trace_sinks(devices);
+
   for (i = 0; i < board->n_cpu; ++i) {
     devices->ptm[i] = cs_cpu_get_device(i, CS_DEVCLASS_SOURCE);
     if (devices->ptm[i] == CS_ERRDESC) {
@@ -261,6 +262,8 @@ int enable_trace(const struct board *board, struct cs_devices_t *devices)
   if (!board || !devices) {
     return -1;
   }
+
+  disable_all_trace_sinks(devices);
 
   if (cs_sink_etr_setup(devices->etb, etr_ram_addr, etr_ram_size,
                         board->etr_axictl) != 0) {
@@ -344,6 +347,8 @@ int enable_trace_sinks_only(struct cs_devices_t *devices)
   if (!devices) {
     return -1;
   }
+
+  disable_all_trace_sinks(devices);
 
   if (cs_sink_enable(devices->etb) != 0) {
     fprintf(stderr, "Failed to enable ETR\n");
