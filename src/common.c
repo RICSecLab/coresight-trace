@@ -94,6 +94,7 @@ static void *trace_buf = NULL;
 static size_t trace_buf_size = 0;
 static void *trace_buf_ptr = NULL;
 static void *decoded_trace_buf = NULL;
+static int polling_status = 0;
 
 static pthread_t decoder_thread;
 
@@ -110,7 +111,7 @@ static bool decoder_ready = true;
 
 extern int registration_verbose;
 
-static int enable_cs_trace(pid_t pid);
+static int enable_cs_trace(pid_t pid, bool enable_all);
 static int disable_cs_trace(bool disable_all);
 
 static void signal_trace_event(trace_event_t event)
@@ -161,6 +162,7 @@ static int trace_sink_polling(unsigned long decoding_threshold)
   int ret;
   unsigned long init_pos;
   unsigned long curr_offset;
+  bool is_disabled_all;
 
   pthread_mutex_lock(&trace_decoder_mutex);
   decoder_ready = false;
@@ -169,6 +171,7 @@ static int trace_sink_polling(unsigned long decoding_threshold)
 
   ret = 0;
   init_pos = cs_get_buffer_rwp(devices.etb);
+  is_disabled_all = false;
 
   while (!kill(child_pid, 0)) {
     curr_offset = cs_get_buffer_rwp(devices.etb) - init_pos;
@@ -188,12 +191,17 @@ static int trace_sink_polling(unsigned long decoding_threshold)
       wait_trace_event(suspend_event);
 
       if ((ret = disable_cs_trace(false)) < 0) {
-        fprintf(stderr, "disable_cs_trace() failed\n");
-        goto exit;
+        fprintf(stderr, "disable_cs_trace() failed. Trying disable all devices...\n");
+        is_disabled_all = true;
+        if ((ret = disable_cs_trace(true)) < 0) {
+          fprintf(stderr, "disable_cs_trace() failed\n");
+          goto exit;
+        }
       }
       fetch_trace();
 
-      enable_cs_trace(child_pid);
+      enable_cs_trace(child_pid, is_disabled_all);
+      is_disabled_all = false;
       /* Continue child_pid process. */
       ret = kill(child_pid, SIGCONT);
       if (ret < 0) {
@@ -263,7 +271,7 @@ static void *decoder_worker(void *arg)
     event = trace_event; /* TODO: trace_event can be changed in if cond. */
     pthread_mutex_unlock(&trace_event_mutex);
     if (event == start_event) {
-      trace_sink_polling(decoding_threshold);
+      polling_status = trace_sink_polling(decoding_threshold);
     } else if (event == fini_event) {
       break;
     }
@@ -477,7 +485,7 @@ exit:
   return ret;
 }
 
-static int enable_cs_trace(pid_t pid)
+static int enable_cs_trace(pid_t pid, bool enable_all)
 {
   int ret;
 
@@ -499,9 +507,16 @@ static int enable_cs_trace(pid_t pid)
     is_first_trace = false;
   } else {
     /* Enable trace sinks only once ETMs enabled */
-    if (enable_trace_sinks_only(&devices) < 0) {
-      fprintf(stderr, "enable_trace_sinks_only() failed\n");
-      goto exit;
+    if (enable_all) {
+      if (enable_trace(board, &devices) < 0) {
+        fprintf(stderr, "enable_trace() failed\n");
+        goto exit;
+      }
+    } else {
+      if (enable_trace_sinks_only(&devices) < 0) {
+        fprintf(stderr, "enable_trace_sinks_only() failed\n");
+        goto exit;
+      }
     }
   }
 
@@ -668,7 +683,14 @@ int stop_trace(bool disable_all)
 
   if ((ret = disable_cs_trace(disable_all)) < 0) {
     fprintf(stderr, "disable_cs_trace() failed\n");
-    goto exit;
+    if (!disable_all) {
+      fprintf(stderr, "Trying to disable all devices...\n");
+      disable_all = true;
+      if ((ret = disable_cs_trace(disable_all)) < 0) {
+        fprintf(stderr, "disable_cs_trace() failed\n");
+        goto exit;
+      }
+    }
   }
 
   set_trace_state(ready_state);
@@ -679,6 +701,7 @@ int stop_trace(bool disable_all)
   while (!decoder_ready) {
     pthread_cond_wait(&trace_decoder_cond, &trace_decoder_mutex);
   }
+  ret = polling_status;
   pthread_mutex_unlock(&trace_decoder_mutex);
 
 exit:
