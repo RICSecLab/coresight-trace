@@ -630,7 +630,7 @@ exit:
 void trace_suspend_resume_callback(void) { set_trace_state(suspended_state); }
 
 /* Start trace session. CoreSight and decoder must be initialized. */
-int start_trace(pid_t pid, bool use_pid_trace)
+int start_trace(pid_t pid, bool use_pid_trace, bool enable_all)
 {
   int ret;
 
@@ -647,7 +647,7 @@ int start_trace(pid_t pid, bool use_pid_trace)
   }
 
   child_pid = pid;
-  if ((ret = enable_cs_trace(use_pid_trace ? pid : 0)) < 0) {
+  if ((ret = enable_cs_trace(use_pid_trace ? pid : 0, enable_all)) < 0) {
     fprintf(stderr, "enable_cs_trace() failed\n");
   }
 

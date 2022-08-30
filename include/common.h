@@ -16,7 +16,7 @@ int fetch_trace(void);
 int decode_trace(void);
 int init_trace(pid_t parent_pid, pid_t pid);
 void fini_trace(void);
-int start_trace(pid_t pid, bool use_pid_trace);
+int start_trace(pid_t pid, bool use_pid_trace, bool enable_all);
 int stop_trace(bool disable_all);
 void trace_suspend_resume_callback(void);
 
