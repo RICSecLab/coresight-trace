@@ -47,6 +47,8 @@ u32 exec_count = 0;
 #endif
 
 /* TODO: Remove extern variables. */
+extern int trace_cpu;
+extern int decoder_cpu;
 extern int udmabuf_num;
 extern bool decoding_on;
 extern unsigned char *trace_bitmap;
@@ -365,6 +367,14 @@ int main(int argc, char *argv[])
 
   if ((ptr = getenv("AFLCS_UDMABUF")) != NULL) {
     udmabuf_num = atoi(ptr);
+  }
+
+  if ((ptr = getenv("AFLCS_TRACE_CPU")) != NULL) {
+    trace_cpu = atoi(ptr);
+  }
+
+  if ((ptr = getenv("AFLCS_DECODER_CPU")) != NULL) {
+    decoder_cpu = atoi(ptr);
   }
 
   /* then we initialize the shared memory map and start the forkserver */
