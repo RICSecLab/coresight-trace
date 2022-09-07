@@ -212,6 +212,7 @@ static int trace_sink_polling(unsigned long decoding_threshold)
         goto exit;
       }
     }
+    usleep(1);
   }
 
 killed:
