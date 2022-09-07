@@ -35,7 +35,7 @@
 #include "utils.h"
 
 #define DEFAULT_TRACE_CPU 0
-#define DEFAULT_DECODER_CPU -1
+#define DEFAULT_DECODER_CPU 28
 #define DEFAULT_UDMABUF_NUM 0
 #define DEFAULT_ETF_SIZE 0x1000
 #define DEFAULT_TRACE_SIZE 0x80000
@@ -73,7 +73,8 @@ const struct board *board;
 struct cs_devices_t devices;
 int udmabuf_num = DEFAULT_UDMABUF_NUM;
 bool decoding_on = false;
-int trace_cpu = -1;
+int trace_cpu = DEFAULT_TRACE_CPU;
+int decoder_cpu = DEFAULT_DECODER_CPU;
 bool export_config = false;
 unsigned long etr_ram_addr = 0;
 size_t etr_ram_size = 0;
@@ -690,7 +691,6 @@ int init_trace(pid_t parent_pid, pid_t pid)
 {
   int ret;
   int preferred_cpu;
-  int decoder_cpu;
 
   ret = -1;
 
@@ -713,6 +713,7 @@ int init_trace(pid_t parent_pid, pid_t pid)
     }
     trace_cpu = preferred_cpu >= 0 ? preferred_cpu : DEFAULT_TRACE_CPU;
   }
+  fprintf(stderr, "INFO: trace CPU: #%d\n", trace_cpu);
 
   if (get_udmabuf_info(udmabuf_num, &etr_ram_addr, &etr_ram_size) < 0) {
     fprintf(stderr, "Failed to get u-dma-buf info\n");
@@ -749,10 +750,13 @@ int init_trace(pid_t parent_pid, pid_t pid)
      * Marvell ThunderX2. The tracee process and the decoder thread should be
      * in the same CPU core group. DEFAULT_DECODER_CPU fallback is -1.
      */
-    if ((decoder_cpu = get_preferred_cpu(pid)) < 0) {
-      decoder_cpu = DEFAULT_DECODER_CPU;
+    if (decoder_cpu < 0) {
+      if ((decoder_cpu = get_preferred_cpu(pid)) < 0) {
+        decoder_cpu = DEFAULT_DECODER_CPU;
+      }
     }
     if (decoder_cpu >= 0) {
+      fprintf(stderr, "INFO: decoder CPU: #%d\n", decoder_cpu);
       if (set_pthread_cpu_affinity(decoder_cpu, decoder_thread) < 0) {
         fprintf(stderr, "set_pthread_cpu_affinity() failed");
       }
