@@ -434,6 +434,9 @@ int main(int argc, char *argv[])
       cycle_count = default_cycle_count;
     }
 
+    /* Write something to bitmap to avoid NO_INST error. */
+    trace_bitmap[0] = 1;
+
     /* report the test case is done and wait for the next */
     if (__afl_end_testcase(status) < 0) return -1;
 
